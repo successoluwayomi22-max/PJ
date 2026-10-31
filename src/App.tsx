@@ -96,7 +96,7 @@ const GUEST_USER: User = {
     'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
   bio: 'Exploring open news dispatches on Pulse.',
   location: 'Global',
-  role: 'user',
+  role: 'guest',
   status: 'active',
   verificationTier: 'standard',
   trustScore: 0.5,
@@ -1293,10 +1293,10 @@ export function App() {
             </nav>
           </div>
 
-          {/* Center: Instant Search Input */}
-          <div className="hidden md:flex flex-1 max-w-md mx-4">
+          {/* Center: Instant Search Input (Works for both Guests and Signed-in Users) */}
+          <div className="flex-1 max-w-lg mx-2 sm:mx-4">
             <div className="relative w-full">
-              <Search className="w-4 h-4 opacity-45 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 opacity-45 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={searchQuery}
@@ -1315,14 +1315,20 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 opacity-60 hover:opacity-100"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 opacity-60 hover:opacity-100 p-0.5"
+                  title="Clear search"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               ) : (
-                <kbd className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] font-mono opacity-40">
+                <button
+                  type="button"
+                  onClick={() => setCommandOpen(true)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] font-mono opacity-40 hover:opacity-100 transition-opacity"
+                  title="Open quick command search (⌘K)"
+                >
                   ⌘K
-                </kbd>
+                </button>
               )}
             </div>
           </div>
@@ -1372,19 +1378,20 @@ export function App() {
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {/* Write / Publish CTA */}
-            <Link
-              to="/create"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold text-slate-950 shadow-sm transition-opacity hover:opacity-95"
-              style={{ backgroundColor: primaryColor }}
-            >
-              <Feather className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Write Story</span>
-            </Link>
-
             {/* Active User RBAC Menu & Dashboard Access */}
             {isAuthenticated ? (
-              <div className="relative" ref={userMenuRef}>
+              <div className="flex items-center gap-2">
+                {/* Write / Publish CTA: ONLY visible when authenticated */}
+                <Link
+                  to="/create"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-950 shadow-sm transition-opacity hover:opacity-95"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  <Feather className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Write Story</span>
+                </Link>
+
+                <div className="relative" ref={userMenuRef}>
                 <button
                   type="button"
                   onClick={() => setUserMenuOpen((v) => !v)}
@@ -1541,7 +1548,8 @@ export function App() {
                   </div>
                 )}
               </div>
-            ) : (
+            </div>
+          ) : (
               <div className="flex items-center gap-2">
                 <Link
                   to="/login"
@@ -2386,7 +2394,7 @@ export function App() {
           element={
             <AuthPage
               users={users}
-              currentUser={currentUser}
+              currentUser={isAuthenticated ? currentUser : null}
               primaryColor={primaryColor}
               cardBgColor={cardBgColor}
               isDark={isDark}
@@ -2404,7 +2412,7 @@ export function App() {
           element={
             <AuthPage
               users={users}
-              currentUser={currentUser}
+              currentUser={isAuthenticated ? currentUser : null}
               primaryColor={primaryColor}
               cardBgColor={cardBgColor}
               isDark={isDark}

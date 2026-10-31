@@ -28,7 +28,7 @@ import { api } from '../services/api';
 
 interface AuthPageProps {
   users: User[];
-  currentUser: User;
+  currentUser?: User | null;
   primaryColor: string;
   cardBgColor: string;
   isDark: boolean;
@@ -304,7 +304,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         </div>
 
         <div className="max-w-md w-full mx-auto my-auto py-6 space-y-6">
-          {currentUser && currentUser.status === 'active' && (
+          {currentUser && currentUser.id !== 'guest' && currentUser.status === 'active' && (
             <div className={`p-5 rounded-2xl border text-center space-y-3.5 shadow-lg ${
               isDark ? 'border-sky-500/30 bg-sky-500/10 text-slate-100' : 'border-sky-200 bg-sky-50 text-slate-900'
             }`}>

@@ -5,6 +5,7 @@ import {
   Camera,
   Check,
   Compass,
+  Feather,
   Film,
   Link2,
   MapPin,
@@ -188,6 +189,59 @@ export const CreatePostPage: React.FC<CreatePostPageProps> = ({
       navigate(`/article/${newPost.id}`);
     }
   };
+
+  if (!currentUser || currentUser.id === 'guest') {
+    return (
+      <div className="min-h-[calc(100vh-64px)] flex items-center justify-center p-6">
+        <div
+          className={`max-w-md w-full p-8 rounded-3xl border text-center space-y-4 shadow-xl ${
+            isDark ? 'bg-slate-900 border-white/15 text-white' : 'bg-white border-slate-200 text-slate-900'
+          }`}
+        >
+          <div
+            className="w-14 h-14 rounded-2xl mx-auto flex items-center justify-center shadow"
+            style={{ backgroundColor: primaryColor, color: '#090d16' }}
+          >
+            <Feather className="w-6 h-6" />
+          </div>
+          <div className="space-y-1.5">
+            <h2 className="font-editorial text-2xl font-bold tracking-tight">
+              Newsroom Sign-In Required
+            </h2>
+            <p className="text-xs opacity-75 leading-relaxed">
+              Publishing dispatches to the international wire requires an authenticated journalist, creator, or contributor account.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-slate-950 transition-opacity hover:opacity-90 shadow"
+              style={{ backgroundColor: primaryColor }}
+            >
+              Sign In to Write
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/register')}
+              className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
+            >
+              Create Account
+            </button>
+          </div>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="inline-flex items-center gap-1.5 text-xs opacity-65 hover:opacity-100 transition-opacity"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Back to News Feed
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20">
