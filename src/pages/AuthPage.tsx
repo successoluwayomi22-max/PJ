@@ -133,7 +133,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       setLoginError(
         failStatus.locked
           ? `Too many incorrect attempts. Login locked for ${failStatus.retryAfterSeconds}s.`
-          : 'Incorrect password. (Default password for demo accounts is: password123)'
+          : 'Incorrect password. Please verify your credentials and try again.'
       );
       return;
     }
@@ -289,11 +289,15 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               {/* Standard Email + Password Form */}
               <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
                 <div>
-                  <label className="block font-medium opacity-75 mb-1.5">
+                  <label className="block font-medium opacity-80 mb-1.5">
                     Email or Username (@handle)
                   </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 opacity-45 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <div className="relative group">
+                    <Mail
+                      className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
+                        isDark ? 'text-slate-400 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
+                      }`}
+                    />
                     <input
                       type="text"
                       required
@@ -302,19 +306,26 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                         setLoginEmail(e.target.value);
                         setLoginError(null);
                       }}
-                      placeholder="e.g. kenji_takahashi or kenji@pulsenews.global"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-500/[0.06] border border-slate-500/20 text-sm focus:outline-none focus:border-sky-400"
+                      placeholder="Enter your email or @username"
+                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
+                        isDark
+                          ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                          : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
+                      }`}
                     />
                   </div>
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="font-medium opacity-75">Password</label>
-                    <span className="text-[11px] opacity-60">Default: password123</span>
+                    <label className="font-medium opacity-80">Password</label>
                   </div>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 opacity-45 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <div className="relative group">
+                    <Lock
+                      className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
+                        isDark ? 'text-slate-400 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
+                      }`}
+                    />
                     <input
                       type={showLoginPassword ? 'text' : 'password'}
                       required
@@ -324,12 +335,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                         setLoginError(null);
                       }}
                       placeholder="Enter your password"
-                      className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-slate-500/[0.06] border border-slate-500/20 text-sm focus:outline-none focus:border-sky-400"
+                      className={`w-full pl-10 pr-10 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
+                        isDark
+                          ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                          : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
+                      }`}
                     />
                     <button
                       type="button"
                       onClick={() => setShowLoginPassword((prev) => !prev)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"
+                      className={`absolute right-3.5 top-1/2 -translate-y-1/2 transition-colors ${
+                        isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                      }`}
                       title={showLoginPassword ? 'Hide password' : 'Show password'}
                     >
                       {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -351,52 +368,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   Sign In
                 </button>
               </form>
-
-              {/* Discreet Credential Test Fillers (Safely populates input fields) */}
-              <div className="pt-4 border-t border-slate-500/15 space-y-2">
-                <div className="flex items-center justify-between text-[11px] opacity-60">
-                  <span>Demo Test Credentials</span>
-                  <span>Click to populate form</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLoginEmail('kenji_takahashi');
-                      setLoginPassword('password123');
-                      setLoginError(null);
-                    }}
-                    className="p-2 rounded-xl border border-slate-500/15 hover:border-slate-500/35 bg-slate-500/[0.03] text-left transition-colors"
-                  >
-                    <div className="font-semibold text-[11px] text-sky-400 truncate">Kenji T.</div>
-                    <div className="text-[10px] opacity-55 truncate">Journalist</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLoginEmail('amina_eyewitness');
-                      setLoginPassword('password123');
-                      setLoginError(null);
-                    }}
-                    className="p-2 rounded-xl border border-slate-500/15 hover:border-slate-500/35 bg-slate-500/[0.03] text-left transition-colors"
-                  >
-                    <div className="font-semibold text-[11px] text-emerald-400 truncate">Amina O.</div>
-                    <div className="text-[10px] opacity-55 truncate">Reader</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLoginEmail('commander_chief');
-                      setLoginPassword('password123');
-                      setLoginError(null);
-                    }}
-                    className="p-2 rounded-xl border border-slate-500/15 hover:border-slate-500/35 bg-slate-500/[0.03] text-left transition-colors"
-                  >
-                    <div className="font-semibold text-[11px] text-amber-400 truncate">Elena V.</div>
-                    <div className="text-[10px] opacity-55 truncate">Admin</div>
-                  </button>
-                </div>
-              </div>
 
               <div className="text-center text-xs opacity-65">
                 Don&apos;t have an account yet?{' '}
@@ -449,7 +420,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </div>
 
               <div>
-                <label className="block font-medium opacity-75 mb-1.5">Full Name *</label>
+                <label className="block font-medium opacity-80 mb-1.5">Full Name *</label>
                 <input
                   type="text"
                   required
@@ -459,13 +430,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     setRegisterError(null);
                   }}
                   placeholder="e.g. Julian Vance"
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-500/[0.06] border border-slate-500/20 text-sm focus:outline-none focus:border-sky-400"
+                  className={`w-full px-4 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
+                    isDark
+                      ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                      : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
+                  }`}
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-medium opacity-75 mb-1.5">
+                  <label className="block font-medium opacity-80 mb-1.5">
                     Username (@handle) *
                   </label>
                   <input
@@ -477,23 +452,31 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       setRegisterError(null);
                     }}
                     placeholder="e.g. julian_vance"
-                    className="w-full px-4 py-2.5 rounded-xl bg-slate-500/[0.06] border border-slate-500/20 text-sm focus:outline-none focus:border-sky-400"
+                    className={`w-full px-4 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
+                      isDark
+                        ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                        : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
+                    }`}
                   />
                 </div>
                 <div>
-                  <label className="block font-medium opacity-75 mb-1.5">City / Location</label>
+                  <label className="block font-medium opacity-80 mb-1.5">City / Location</label>
                   <input
                     type="text"
                     value={bureau}
                     onChange={(e) => setBureau(e.target.value)}
                     placeholder="e.g. London, UK"
-                    className="w-full px-4 py-2.5 rounded-xl bg-slate-500/[0.06] border border-slate-500/20 text-sm focus:outline-none focus:border-sky-400"
+                    className={`w-full px-4 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
+                      isDark
+                        ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                        : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
+                    }`}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-medium opacity-75 mb-1.5">Email Address *</label>
+                <label className="block font-medium opacity-80 mb-1.5">Email Address *</label>
                 <input
                   type="email"
                   required
@@ -503,13 +486,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     setRegisterError(null);
                   }}
                   placeholder="name@domain.com"
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-500/[0.06] border border-slate-500/20 text-sm focus:outline-none focus:border-sky-400"
+                  className={`w-full px-4 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
+                    isDark
+                      ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                      : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
+                  }`}
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-medium opacity-75 mb-1.5">Password *</label>
+                  <label className="block font-medium opacity-80 mb-1.5">Password *</label>
                   <div className="relative">
                     <input
                       type={showRegPassword ? 'text' : 'password'}
@@ -520,12 +507,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                         setRegisterError(null);
                       }}
                       placeholder="At least 8 characters (mixed case, number, special)"
-                      className="w-full pl-3 pr-9 py-2.5 rounded-xl bg-slate-500/[0.06] border border-slate-500/20 text-sm focus:outline-none focus:border-sky-400"
+                      className={`w-full pl-3 pr-9 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
+                        isDark
+                          ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                          : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
+                      }`}
                     />
                     <button
                       type="button"
                       onClick={() => setShowRegPassword((prev) => !prev)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"
+                      className={`absolute right-3 top-1/2 -translate-y-1/2 transition-colors ${
+                        isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                      }`}
                     >
                       {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
@@ -617,7 +610,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-medium opacity-75 mb-1.5">Confirm Password *</label>
+                  <label className="block font-medium opacity-80 mb-1.5">Confirm Password *</label>
                   <input
                     type={showRegPassword ? 'text' : 'password'}
                     required
@@ -627,7 +620,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       setRegisterError(null);
                     }}
                     placeholder="Repeat password"
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-500/[0.06] border border-slate-500/20 text-sm focus:outline-none focus:border-sky-400"
+                    className={`w-full px-3 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
+                      isDark
+                        ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                        : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
+                    }`}
                   />
                 </div>
               </div>

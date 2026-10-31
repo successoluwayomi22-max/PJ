@@ -12,18 +12,25 @@ import {
   History,
   Image as ImageIcon,
   Layers,
+  Check,
+  KeyRound,
   Lock,
+  LogOut,
   Palette,
   Pin,
+  Plus,
   RefreshCw,
   RotateCcw,
+  Shield,
   ShieldAlert,
   ShieldCheck,
   Sliders,
   Terminal,
   Trash2,
   Upload,
+  UserCheck,
   Users,
+  XCircle,
   Zap,
 } from 'lucide-react';
 import {
@@ -35,9 +42,19 @@ import {
   WAFIncident,
 } from '../utils/security';
 import {
+  ALL_PERMISSIONS,
+  SYSTEM_ROLES,
+  getRoleDefinition,
+  validateRoleAssignment,
+  validateRoleCreation,
+  validateRoleDeletion,
+} from '../utils/rbac';
+import {
   AuditLogEntry,
   CommunityNote,
   NewsPost,
+  PermissionIdentifier,
+  RoleDefinition,
   SiteSettings,
   TelemetrySnapshot,
   User,
@@ -52,11 +69,15 @@ interface AdminDashboardViewProps {
   currentUser?: User;
   notes: CommunityNote[];
   auditLogs: AuditLogEntry[];
+  customRoles?: RoleDefinition[];
   onUpdateSettings: (next: SiteSettings, auditDesc: string) => void;
   onUpdatePost: (postId: string, updates: Partial<NewsPost>, reason: string) => void;
   onDeletePost: (postId: string) => void;
   onUpdateUser: (userId: string, updates: Partial<User>, reason?: string) => void;
   onUndoAuditLog: (entry: AuditLogEntry) => void;
+  onCreateCustomRole?: (role: RoleDefinition) => void;
+  onDeleteCustomRole?: (roleId: string) => void;
+  onSignOut?: () => void;
 }
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
@@ -66,16 +87,51 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   currentUser,
   notes,
   auditLogs,
+  customRoles = [],
   onUpdateSettings,
   onUpdatePost,
   onDeletePost,
   onUpdateUser,
   onUndoAuditLog,
+  onCreateCustomRole,
+  onDeleteCustomRole,
+  onSignOut,
 }) => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<
-    'overview' | 'users' | 'branding' | 'cyber_defense' | 'telemetry' | 'algorithm' | 'audit'
+    | 'overview'
+    | 'rbac_roles'
+    | 'users'
+    | 'branding'
+    | 'cyber_defense'
+    | 'telemetry'
+    | 'algorithm'
+    | 'audit'
   >('overview');
+
+  // RBAC Management State
+  const [selectedRoleId, setSelectedRoleId] = useState<string>('super_admin');
+  const [roleAssignFeedback, setRoleAssignFeedback] = useState<{
+    userId: string;
+    message: string;
+    isError: boolean;
+  } | null>(null);
+
+  const [showRoleCreator, setShowRoleCreator] = useState(false);
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newRoleLabel, setNewRoleLabel] = useState('');
+  const [newRoleDescription, setNewRoleDescription] = useState('');
+  const [newRolePriority, setNewRolePriority] = useState<number>(35);
+  const [newRolePermissions, setNewRolePermissions] = useState<PermissionIdentifier[]>([
+    'articles.view',
+    'articles.review',
+  ]);
+  const [roleCreationFeedback, setRoleCreationFeedback] = useState<{
+    message: string;
+    isError: boolean;
+  } | null>(null);
+
+  const allRoles = [...SYSTEM_ROLES, ...customRoles];
 
   const [wafIncidents, setWafIncidents] = useState<WAFIncident[]>(() => getWAFIncidents());
   const [blockedClients, setBlockedClients] = useState(() => getBlockedClients());
@@ -266,16 +322,24 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   return (
     <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 space-y-5">
-      {/* Top Page Header Back Button */}
+      {/* Top Admin OS Header Bar & Sign Out */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-500/15">
-        <button
-          type="button"
-          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back</span>
-        </button>
+        <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-amber-400">
+          <ShieldAlert className="w-4 h-4" />
+          <span>Executive Administration Console</span>
+        </div>
+
+        {onSignOut && (
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 transition-colors"
+            title="Sign Out of Admin OS"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sign Out</span>
+          </button>
+        )}
       </div>
 
       <input
@@ -1737,6 +1801,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Bottom Back Navigation Bar */}
+      <div className="pt-6 border-t border-slate-500/15 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back</span>
+        </button>
+
+        <Link
+          to="/"
+          className="text-xs font-medium opacity-65 hover:opacity-100 hover:underline"
+        >
+          Return to News Feed
+        </Link>
       </div>
     </div>
   );

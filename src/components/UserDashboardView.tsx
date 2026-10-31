@@ -11,6 +11,7 @@ import {
   Eye,
   FileText,
   Film,
+  LogOut,
   Plus,
   ShieldCheck,
   ThumbsUp,
@@ -30,6 +31,7 @@ interface UserDashboardViewProps {
   onUpdatePost: (postId: string, updates: Partial<NewsPost>, reason: string) => void;
   onDeletePost: (postId: string) => void;
   onUpdateUser: (userId: string, updates: Partial<User>) => void;
+  onSignOut?: () => void;
 }
 
 const PRESET_AVATARS = [
@@ -51,6 +53,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   onUpdatePost,
   onDeletePost,
   onUpdateUser,
+  onSignOut,
 }) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<
@@ -103,24 +106,6 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 space-y-6">
-      {/* Top Back Navigation Bar */}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold border border-slate-500/20 hover:bg-slate-500/10 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back
-        </button>
-
-        <Link
-          to="/"
-          className="text-xs font-medium opacity-65 hover:opacity-100 hover:underline"
-        >
-          Return to Home Feed
-        </Link>
-      </div>
-
       {/* Hidden File Input for Instant Profile Picture Upload */}
       <input
         ref={avatarInputRef}
@@ -203,6 +188,16 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           >
             <Plus className="w-3.5 h-3.5" /> New Dispatch
           </Link>
+          {onSignOut && (
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="px-4 py-2 rounded-full text-xs font-semibold border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 transition-colors flex items-center gap-1.5"
+              title="Sign Out Completely"
+            >
+              <LogOut className="w-3.5 h-3.5" /> Sign Out
+            </button>
+          )}
         </div>
       </div>
 
@@ -606,6 +601,24 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           ))}
         </div>
       )}
+
+      {/* Bottom Back Navigation Bar */}
+      <div className="pt-6 border-t border-slate-500/15 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold border border-slate-500/20 hover:bg-slate-500/10 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back
+        </button>
+
+        <Link
+          to="/"
+          className="text-xs font-medium opacity-65 hover:opacity-100 hover:underline"
+        >
+          Return to Home Feed
+        </Link>
+      </div>
     </div>
   );
 };

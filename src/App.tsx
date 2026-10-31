@@ -15,6 +15,7 @@ import {
   Bookmark,
   Camera,
   Check,
+  ChevronDown,
   Compass,
   Feather,
   Film,
@@ -23,7 +24,9 @@ import {
   Headphones,
   Home,
   Image as ImageIcon,
+  KeyRound,
   LayoutDashboard,
+  LogOut,
   MapPin,
   Moon,
   Pause,
@@ -73,8 +76,27 @@ import { BookmarksPage } from './pages/BookmarksPage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
+import { AccountSettingsModal } from './components/AccountSettingsModal';
 
 const STORAGE_KEY = 'pulse_news_mature_v5';
+
+const GUEST_USER: User = {
+  id: 'guest',
+  username: 'guest',
+  displayName: 'Guest Reader',
+  email: 'guest@pulsenews.global',
+  avatarUrl:
+    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+  bio: 'Exploring open news dispatches on Pulse.',
+  location: 'Global',
+  role: 'user',
+  status: 'active',
+  verificationTier: 'standard',
+  trustScore: 0.5,
+  joinedAt: '2025-01-01T00:00:00Z',
+  followersCount: 0,
+  reportsCount: 0,
+};
 
 const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   {
@@ -286,7 +308,7 @@ export function App() {
     }
   });
   const [followToast, setFollowToast] = useState<string | null>(null);
-  const followToastTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const followToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
 
   // Inline Home Quick-Post Composer state
@@ -321,10 +343,41 @@ export function App() {
   const [lightboxMedia, setLightboxMedia] = useState<{ url: string; caption?: string } | null>(null);
   const [cookieSettingsOpen, setCookieSettingsOpen] = useState(false);
 
-  const currentUser = useMemo(
-    () => users.find((u) => u.id === currentUserId) || users[0],
-    [users, currentUserId]
-  );
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const isAuthenticated = Boolean(currentUserId && currentUserId !== 'guest');
+  const currentUser = useMemo(() => {
+    if (!isAuthenticated) return GUEST_USER;
+    return users.find((u) => u.id === currentUserId) || users[0];
+  }, [users, currentUserId, isAuthenticated]);
+
+  // Close user dropdown on outside click or route change
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    setUserMenuOpen(false);
+  }, [location.pathname]);
+
+  const handleSignOut = () => {
+    setCurrentUserId('guest');
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_current_user_id`, 'guest');
+    } catch {
+      // ignore
+    }
+    setUserMenuOpen(false);
+    navigate('/login');
+  };
 
   // Debounced persistence to localStorage (450ms) so UI updates never block the main thread
   useEffect(() => {
@@ -717,12 +770,14 @@ export function App() {
     setUsers((prev) => prev.filter((u) => u.id !== targetUserId));
 
     // 4. Log administrative audit trail without personal information
-    handleUndoAuditLog(
-      'USER_ACCOUNT_DELETED_PER_GDPR_NDPA',
-      'users',
-      targetUserId,
-      `User account @${targetUser.username} was permanently erased per user erasure request.`
-    );
+    const auditEntry: AuditLogEntry = {
+      id: `audit-${Date.now()}`,
+      adminId: currentUserId,
+      actionType: 'MODERATION_ACTION',
+      description: `User account @${targetUser.username} was permanently erased per user erasure request.`,
+      timestamp: new Date().toISOString(),
+    };
+    setAuditLogs((prev) => [auditEntry, ...prev]);
 
     // 5. Select next fallback user if current user was deleted
     const fallbackUser = users.find((u) => u.id !== targetUserId && u.id !== 'user-admin') || users[0];
@@ -1067,14 +1122,6 @@ export function App() {
                   to: '/bookmarks',
                   label: 'Bookmarks',
                 },
-                ...(currentUser.role === 'admin' ||
-                currentUser.verificationTier === 'journalist' ||
-                currentUser.role === 'moderator'
-                  ? [{ to: '/studio', label: 'Studio' }]
-                  : []),
-                ...(currentUser.role === 'admin'
-                  ? [{ to: '/admin', label: 'Admin' }]
-                  : []),
               ].map((navItem) => {
                 const active = navItem.exact
                   ? location.pathname === navItem.to
@@ -1155,7 +1202,7 @@ export function App() {
             >
               {LANGUAGES.map((l) => (
                 <option key={l.code} value={l.code} className="bg-slate-900 text-white">
-                  {l.code.toUpperCase()} • {l.nativeLabel}
+                  {l.code.toUpperCase()} • {l.nativeName}
                 </option>
               ))}
             </select>
@@ -1195,24 +1242,159 @@ export function App() {
               <span className="hidden sm:inline">Write Story</span>
             </Link>
 
-            {/* Active User Pill */}
-            <Link
-              to={`/profile/${currentUser.username}`}
-              className={`flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-full border transition-colors ${
-                isDark
-                  ? 'border-white/10 hover:border-white/25 bg-white/[0.03]'
-                  : 'border-black/10 hover:border-black/25 bg-black/[0.02]'
-              }`}
-            >
-              <img
-                src={currentUser.avatarUrl}
-                alt={currentUser.displayName}
-                className="w-6 h-6 rounded-full object-cover"
-              />
-              <span className="text-xs font-medium hidden sm:inline max-w-[100px] truncate">
-                {currentUser.displayName.split(' ')[0]}
-              </span>
-            </Link>
+            {/* Active User RBAC Menu & Dashboard Access */}
+            {isAuthenticated ? (
+              <div className="relative" ref={userMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setUserMenuOpen((v) => !v)}
+                  className={`flex items-center gap-2 pl-1.5 pr-2.5 py-1 rounded-full border transition-colors ${
+                    isDark
+                      ? 'border-white/10 hover:border-white/25 bg-white/[0.03]'
+                      : 'border-black/10 hover:border-black/25 bg-black/[0.02]'
+                  }`}
+                  aria-label="User account and dashboard menu"
+                  aria-expanded={userMenuOpen}
+                >
+                  <img
+                    src={currentUser.avatarUrl}
+                    alt={currentUser.displayName}
+                    className="w-6 h-6 rounded-full object-cover"
+                  />
+                  <span className="text-xs font-medium hidden sm:inline max-w-[100px] truncate">
+                    {currentUser.displayName.split(' ')[0]}
+                  </span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 opacity-60 transition-transform ${
+                      userMenuOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* Top-Right RBAC Dashboard Dropdown Menu */}
+                {userMenuOpen && (
+                  <div
+                    style={{ backgroundColor: cardBgColor }}
+                    className={`absolute right-0 top-full mt-2 w-64 rounded-2xl border shadow-2xl z-50 p-2 text-xs divide-y ${
+                      isDark
+                        ? 'border-white/15 divide-white/10 text-white'
+                        : 'border-black/10 divide-black/10 text-slate-900'
+                    }`}
+                  >
+                    {/* User Profile Header */}
+                    <div className="p-2.5 flex items-center gap-3">
+                      <img
+                        src={currentUser.avatarUrl}
+                        alt={currentUser.displayName}
+                        className="w-9 h-9 rounded-full object-cover shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-xs truncate flex items-center gap-1.5">
+                          <span className="truncate">{currentUser.displayName}</span>
+                          {currentUser.role === 'admin' ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-400 shrink-0">
+                              ADMIN
+                            </span>
+                          ) : currentUser.verificationTier === 'journalist' ||
+                            currentUser.role === 'moderator' ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-500/15 text-sky-400 shrink-0">
+                              JOURNALIST
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-500/15 text-slate-400 shrink-0">
+                              READER
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] opacity-60 truncate">
+                          @{currentUser.username}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* RBAC Dashboard & Navigation Items */}
+                    <div className="py-1.5 space-y-0.5">
+                      {/* Role-Specific Dashboard Access */}
+                      <Link
+                        to={currentUser.role === 'admin' ? '/admin' : '/studio'}
+                        onClick={() => setUserMenuOpen(false)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left hover:bg-slate-500/10 font-semibold"
+                        style={{ color: primaryColor }}
+                      >
+                        {currentUser.role === 'admin' ? (
+                          <Sliders className="w-4 h-4" />
+                        ) : (
+                          <LayoutDashboard className="w-4 h-4" />
+                        )}
+                        <span>
+                          {currentUser.role === 'admin'
+                            ? 'Executive Admin OS'
+                            : currentUser.verificationTier === 'journalist' ||
+                              currentUser.role === 'moderator'
+                            ? 'Creator Studio'
+                            : 'Reader Dashboard'}
+                        </span>
+                      </Link>
+
+                      {/* Public Profile */}
+                      <Link
+                        to={`/profile/${currentUser.username}`}
+                        onClick={() => setUserMenuOpen(false)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left hover:bg-slate-500/10 font-medium"
+                      >
+                        <UserIcon className="w-4 h-4 opacity-70" />
+                        <span>My Profile</span>
+                      </Link>
+
+                      {/* Security & Account Settings Modal Trigger */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserMenuOpen(false);
+                          setSettingsModalOpen(true);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left hover:bg-slate-500/10 font-medium"
+                      >
+                        <KeyRound className="w-4 h-4 opacity-70" />
+                        <span>Account Settings</span>
+                      </button>
+                    </div>
+
+                    {/* Complete Sign Out */}
+                    <div className="pt-1.5">
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left font-medium text-rose-500 hover:bg-rose-500/10 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/login"
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    isDark
+                      ? 'border-white/15 hover:bg-white/10 text-white'
+                      : 'border-black/15 hover:bg-black/5 text-slate-900'
+                  }`}
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/register"
+                  className="px-3 py-1.5 rounded-full text-xs font-semibold text-slate-950 shadow-sm transition-opacity hover:opacity-95"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  Create Account
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -1264,19 +1446,11 @@ export function App() {
                         label: 'Bookmarks',
                         icon: Bookmark,
                       },
-                      ...(currentUser.role === 'admin' ||
-                      currentUser.verificationTier === 'journalist' ||
-                      currentUser.role === 'moderator'
-                        ? [{ to: '/studio', label: 'Creator Studio', icon: LayoutDashboard }]
-                        : []),
                       {
                         to: `/profile/${currentUser.username}`,
                         label: 'My Profile',
                         icon: UserIcon,
                       },
-                      ...(currentUser.role === 'admin'
-                        ? [{ to: '/admin', label: 'Admin Control', icon: Sliders }]
-                        : []),
                     ].map((item) => {
                       const Icon = item.icon;
                       const isActive = item.exact
@@ -1362,63 +1536,6 @@ export function App() {
                           </button>
                         );
                       })}
-                    </div>
-                  </div>
-
-                  {/* Current User Session Card with Profile Photo Upload & Role Switcher */}
-                  <div
-                    style={{ backgroundColor: cardBgColor }}
-                    className={`p-4 rounded-2xl border space-y-3 ${
-                      isDark ? 'border-white/[0.07]' : 'border-black/[0.07]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div
-                          onClick={() => homeAvatarInputRef.current?.click()}
-                          className="relative group cursor-pointer shrink-0"
-                          title="Click to upload profile photo"
-                        >
-                          <img
-                            src={currentUser.avatarUrl}
-                            alt={currentUser.displayName}
-                            className="w-10 h-10 rounded-full object-cover group-hover:opacity-80 transition-opacity"
-                          />
-                          <span
-                            className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-slate-950 shadow"
-                            style={{ backgroundColor: primaryColor }}
-                          >
-                            <Camera className="w-2.5 h-2.5" />
-                          </span>
-                        </div>
-                        <Link to={`/profile/${currentUser.username}`} className="min-w-0">
-                          <div className="font-semibold text-xs truncate hover:underline flex items-center gap-1.5">
-                            <span className="truncate">{currentUser.displayName}</span>
-                            {currentUser.role === 'admin' ? (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-400 shrink-0">
-                                ADMIN
-                              </span>
-                            ) : currentUser.verificationTier === 'journalist' || currentUser.role === 'moderator' ? (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-500/15 text-sky-400 shrink-0">
-                                JOURNALIST
-                              </span>
-                            ) : (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-500/15 text-slate-400 shrink-0">
-                                READER
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] opacity-55 truncate">
-                            @{currentUser.username}
-                          </div>
-                        </Link>
-                      </div>
-                      <Link
-                        to="/login"
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-500/20 hover:bg-slate-500/10 text-[11px] font-medium shrink-0"
-                      >
-                        Switch
-                      </Link>
                     </div>
                   </div>
 
@@ -2020,6 +2137,7 @@ export function App() {
                 onUpdatePost={handleUpdatePost}
                 onDeletePost={handleDeletePost}
                 onUpdateUser={(uId, upd) => handleUpdateUser(uId, upd)}
+                onSignOut={handleSignOut}
               />
             </div>
           }
@@ -2042,10 +2160,22 @@ export function App() {
                 onDeletePost={handleDeletePost}
                 onUpdateUser={handleUpdateUser}
                 onUndoAuditLog={handleUndoAuditLog}
+                onSignOut={handleSignOut}
               />
             ) : (
               <Navigate to="/" replace />
             )
+          }
+        />
+
+        {/* Universal RBAC Dashboard Redirect Route (/dashboard) */}
+        <Route
+          path="/dashboard"
+          element={
+            <Navigate
+              to={currentUser.role === 'admin' ? '/admin' : '/studio'}
+              replace
+            />
           }
         />
 
@@ -2288,6 +2418,20 @@ export function App() {
           <span>{followToast}</span>
         </div>
       )}
+
+      {/* Account Settings & Security Governance Modal */}
+      <AccountSettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+        currentUser={currentUser}
+        userPosts={posts.filter((p) => p.authorId === currentUser.id)}
+        bookmarkedIds={bookmarkedIds}
+        primaryColor={primaryColor}
+        cardBgColor={cardBgColor}
+        isDark={isDark}
+        onUpdateUser={handleUpdateUser}
+        onDeleteAccount={handleDeleteAccount}
+      />
 
       {/* Categorized Cookie Consent & Persistent Settings System */}
       <CookieConsentBanner

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -29,6 +29,7 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
   isDark,
   onOpenCookieSettings,
 }) => {
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('collection');
 
   const SECTIONS = [
@@ -44,17 +45,6 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24 space-y-8">
-      <div className="flex items-center justify-between pb-1">
-        <button
-          type="button"
-          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back</span>
-        </button>
-      </div>
-
       {/* Header Banner */}
       <div
         style={{ backgroundColor: cardBgColor }}
@@ -351,6 +341,24 @@ export const PrivacyPolicyPage: React.FC<PrivacyPolicyPageProps> = ({
               <div><strong>Regulatory Liaison:</strong> Nigeria Data Protection Commission (NDPC) Compliance Registry</div>
             </div>
           </section>
+
+          {/* Bottom Back Button */}
+          <div className="pt-6 border-t border-slate-500/15 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back</span>
+            </button>
+            <Link
+              to="/"
+              className="text-xs font-medium opacity-65 hover:opacity-100 hover:underline"
+            >
+              Return to News Feed
+            </Link>
+          </div>
         </main>
       </div>
     </div>

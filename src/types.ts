@@ -1,6 +1,117 @@
 export type VerificationTier = 'standard' | 'verified_citizen' | 'journalist' | 'news_organization';
-export type UserRole = 'user' | 'moderator' | 'admin';
+export type SystemRole =
+  | 'super_admin'
+  | 'admin'
+  | 'managing_editor'
+  | 'editor'
+  | 'author'
+  | 'contributor'
+  | 'reader'
+  | 'guest'
+  | 'user'
+  | 'moderator';
+
+export type UserRole = SystemRole | string;
 export type AccountStatus = 'active' | 'warned' | 'suspended' | 'banned';
+
+export type PermissionIdentifier =
+  // User Management
+  | 'users.view'
+  | 'users.view_any'
+  | 'users.create'
+  | 'users.update'
+  | 'users.update_own'
+  | 'users.update_any'
+  | 'users.suspend'
+  | 'users.restore'
+  | 'users.delete'
+  | 'users.export'
+  | 'users.manage_roles'
+  // Role Management
+  | 'roles.view'
+  | 'roles.create'
+  | 'roles.update'
+  | 'roles.delete'
+  | 'roles.assign'
+  | 'permissions.view'
+  | 'permissions.assign'
+  // Article Management
+  | 'articles.view'
+  | 'articles.view_any'
+  | 'articles.create'
+  | 'articles.update'
+  | 'articles.update_own'
+  | 'articles.update_any'
+  | 'articles.delete'
+  | 'articles.delete_own'
+  | 'articles.delete_any'
+  | 'articles.submit'
+  | 'articles.review'
+  | 'articles.approve'
+  | 'articles.reject'
+  | 'articles.publish'
+  | 'articles.unpublish'
+  | 'articles.schedule'
+  | 'articles.archive'
+  | 'articles.restore'
+  // Category Management
+  | 'categories.view'
+  | 'categories.create'
+  | 'categories.update'
+  | 'categories.delete'
+  // Media Management
+  | 'media.view'
+  | 'media.upload'
+  | 'media.update'
+  | 'media.delete'
+  | 'media.manage_all'
+  // Comment Management
+  | 'comments.view'
+  | 'comments.create'
+  | 'comments.update_own'
+  | 'comments.delete_own'
+  | 'comments.moderate'
+  | 'comments.approve'
+  | 'comments.reject'
+  | 'comments.report'
+  // Advertising
+  | 'ads.view'
+  | 'ads.create'
+  | 'ads.update'
+  | 'ads.delete'
+  | 'ads.publish'
+  | 'ads.analytics'
+  // Analytics
+  | 'analytics.view'
+  | 'analytics.view_editorial'
+  | 'analytics.view_financial'
+  | 'analytics.export'
+  // System Settings
+  | 'settings.view'
+  | 'settings.update'
+  | 'settings.security.manage'
+  | 'settings.integrations.manage'
+  | 'settings.backups.manage'
+  // Audit Logs
+  | 'audit.view'
+  | 'audit.export'
+  // Newsletter
+  | 'newsletter.view'
+  | 'newsletter.manage'
+  | 'newsletter.send'
+  | 'newsletter.export';
+
+export interface RoleDefinition {
+  id: string;
+  name: string;
+  label: string;
+  description: string;
+  isSystem: boolean;
+  priority: number;
+  permissions: PermissionIdentifier[];
+  createdAt: string;
+  updatedAt: string;
+}
 
 export type PostCategory =
   | 'breaking'
@@ -12,7 +123,48 @@ export type PostCategory =
   | 'weather_disaster'
   | 'culture';
 
-export type PostStatus = 'draft' | 'published' | 'pinned_breaking' | 'disputed' | 'removed';
+export type PostStatus =
+  | 'draft'
+  | 'pending_review'
+  | 'under_review'
+  | 'approved'
+  | 'scheduled'
+  | 'published'
+  | 'rejected'
+  | 'revision_requested'
+  | 'archived'
+  | 'unpublished'
+  | 'pinned_breaking'
+  | 'disputed'
+  | 'removed';
+
+export interface ArticleRevision {
+  id: string;
+  articleId: string;
+  actorId: string;
+  previousStatus: PostStatus;
+  newStatus: PostStatus;
+  transitionNote?: string;
+  timestamp: string;
+  editorialComments?: string[];
+}
+
+export interface EditorialReview {
+  id: string;
+  articleId: string;
+  reviewerId: string;
+  decision: 'approve' | 'reject' | 'request_revision';
+  feedback: string;
+  reviewStartedAt: string;
+  reviewCompletedAt: string;
+}
+
+export interface AuthorizationResult {
+  allowed: boolean;
+  statusCode: 200 | 401 | 403 | 404 | 422;
+  reason?: string;
+  code?: string;
+}
 export type MediaType = 'image' | 'video' | 'panorama_360';
 export type NoteStatus = 'under_review' | 'rated_helpful' | 'rated_misleading';
 
@@ -155,14 +307,35 @@ export interface SiteSettings {
   };
 }
 
+export type AuditLogActionType =
+  | 'BRANDING_EDIT'
+  | 'THEME_CHANGE'
+  | 'POST_INLINE_EDIT'
+  | 'ALGORITHM_TUNE'
+  | 'USER_TRUST_UPDATE'
+  | 'MODERATION_ACTION'
+  | 'ROLE_CREATED'
+  | 'ROLE_UPDATED'
+  | 'ROLE_DELETED'
+  | 'ROLE_ASSIGNED'
+  | 'PERMISSIONS_MODIFIED'
+  | 'WORKFLOW_TRANSITION'
+  | 'SECURITY_EVENT';
+
 export interface AuditLogEntry {
   id: string;
   adminId: string;
-  actionType: 'BRANDING_EDIT' | 'THEME_CHANGE' | 'POST_INLINE_EDIT' | 'ALGORITHM_TUNE' | 'USER_TRUST_UPDATE' | 'MODERATION_ACTION';
+  actionType: AuditLogActionType;
   description: string;
   timestamp: string;
   previousSettings?: Partial<SiteSettings>;
   previousPostState?: NewsPost;
+  targetUserId?: string;
+  targetResourceId?: string;
+  resourceType?: string;
+  outcome?: 'SUCCESS' | 'DENIED';
+  metadata?: Record<string, unknown>;
+  correlationId?: string;
 }
 
 export interface TelemetryLog {

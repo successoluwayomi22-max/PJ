@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Check,
   Cookie,
@@ -25,6 +26,8 @@ export const CookieConsentBanner: React.FC<{
   isOpenExternal?: boolean;
   onCloseExternal?: () => void;
 }> = ({ primaryColor, isDark, isOpenExternal, onCloseExternal }) => {
+  const location = useLocation();
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
   const [hasConsented, setHasConsented] = useState<boolean>(true);
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
   const [preferences, setPreferences] = useState<CookiePreferences>({
@@ -243,18 +246,23 @@ export const CookieConsentBanner: React.FC<{
     );
   }
 
-  // Persistent floating trigger pill when consent has already been given
+  // Persistent floating trigger pill when consent has already been given (hidden on auth pages and positioned bottom-right)
   if (hasConsented) {
+    if (isAuthPage) return null;
     return (
       <button
         type="button"
         onClick={() => setIsCustomizeOpen(true)}
-        className="fixed bottom-4 left-4 z-40 p-2.5 rounded-full bg-slate-900/90 text-white dark:bg-white/90 dark:text-slate-950 border border-white/15 dark:border-black/10 shadow-lg backdrop-blur-md opacity-75 hover:opacity-100 transition-all flex items-center gap-2 text-xs font-medium"
-        title="Open Cookie &amp; Privacy Preferences"
+        className={`fixed bottom-4 right-4 z-40 p-2.5 rounded-full shadow-lg backdrop-blur-md opacity-80 hover:opacity-100 transition-all flex items-center gap-2 text-xs font-medium ${
+          isDark
+            ? 'bg-slate-900/90 text-slate-200 border border-slate-700/80 hover:bg-slate-800'
+            : 'bg-white/95 text-slate-800 border border-slate-300 shadow-md hover:bg-slate-50'
+        }`}
+        title="Manage Cookie &amp; Privacy Preferences"
         aria-label="Manage Cookie Settings"
       >
-        <Cookie className="w-4 h-4" />
-        <span className="hidden md:inline text-[11px]">Privacy Settings</span>
+        <Cookie className="w-4 h-4 text-amber-400" />
+        <span className="hidden sm:inline text-[11px]">Cookie Settings</span>
       </button>
     );
   }
