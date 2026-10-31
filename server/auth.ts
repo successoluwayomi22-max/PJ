@@ -37,11 +37,33 @@ interface RateLimitBucket {
 }
 const rateLimitMap = new Map<string, RateLimitBucket>();
 
-interface LockoutRecord {
-  failures: number;
-  lockedUntil: number;
+// Server-wide CSRF secret
+const CSRF_SECRET = process.env.CSRF_SECRET || crypto.randomBytes(32).toString('hex');
+
+/**
+ * Generates an HMAC-SHA256 CSRF Token bound to a session or guest token
+ */
+export function createCsrfToken(sessionToken: string = ''): string {
+  const hmac = crypto.createHmac('sha256', CSRF_SECRET);
+  hmac.update(sessionToken || 'pulse-anonymous-guest');
+  return hmac.digest('hex');
 }
-const lockoutMap = new Map<string, LockoutRecord>();
+
+/**
+ * Validates an HMAC-SHA256 CSRF Token against a session or guest token using constant-time comparison
+ */
+export function verifyCsrfToken(csrfToken: string, sessionToken: string = ''): boolean {
+  if (!csrfToken || typeof csrfToken !== 'string') return false;
+  const expected = createCsrfToken(sessionToken);
+  try {
+    const bufA = Buffer.from(csrfToken, 'hex');
+    const bufB = Buffer.from(expected, 'hex');
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Cryptographically Secure Scrypt Password Hashing (OWASP Compliant)
@@ -419,46 +441,66 @@ export function inspectRequestThreat(
 }
 
 /**
- * Server-Side Progressive Account Lockout
+ * Server-Side Progressive Account Lockout (Backed by Persistent SQLite Store)
  */
 export function checkAccountLockout(identifier: string): { locked: boolean; retryAfterSeconds: number } {
+  if (!identifier) return { locked: false, retryAfterSeconds: 0 };
   const key = identifier.trim().toLowerCase();
-  const record = lockoutMap.get(key);
   const now = Date.now();
 
-  if (record && record.lockedUntil > now) {
-    return { locked: true, retryAfterSeconds: Math.ceil((record.lockedUntil - now) / 1000) };
+  const row = db.prepare('SELECT failures, locked_until FROM account_lockouts WHERE identifier = ?').get(key) as {
+    failures: number;
+    locked_until: number;
+  } | undefined;
+
+  if (row && row.locked_until > now) {
+    return { locked: true, retryAfterSeconds: Math.ceil((row.locked_until - now) / 1000) };
   }
 
   return { locked: false, retryAfterSeconds: 0 };
 }
 
 export function recordFailedLogin(identifier: string): { locked: boolean; retryAfterSeconds: number } {
+  if (!identifier) return { locked: false, retryAfterSeconds: 0 };
   const key = identifier.trim().toLowerCase();
   const now = Date.now();
-  const record = lockoutMap.get(key) || { failures: 0, lockedUntil: 0 };
 
-  record.failures++;
+  const existing = db.prepare('SELECT failures, locked_until FROM account_lockouts WHERE identifier = ?').get(key) as {
+    failures: number;
+    locked_until: number;
+  } | undefined;
+
+  const failures = (existing?.failures || 0) + 1;
   let retryAfterSeconds = 0;
   let locked = false;
+  let lockedUntil = existing?.locked_until && existing.locked_until > now ? existing.locked_until : 0;
 
-  if (record.failures >= 5) {
-    const multiplier = Math.min(record.failures - 4, 6);
+  if (failures >= 5) {
+    const multiplier = Math.min(failures - 4, 6);
     const lockoutDurationMs = 30000 * Math.pow(2, multiplier - 1); // 30s, 60s, 120s...
-    record.lockedUntil = now + lockoutDurationMs;
+    lockedUntil = now + lockoutDurationMs;
     retryAfterSeconds = Math.ceil(lockoutDurationMs / 1000);
     locked = true;
   }
 
-  lockoutMap.set(key, record);
+  db.prepare(`
+    INSERT INTO account_lockouts (identifier, failures, locked_until, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(identifier) DO UPDATE SET
+      failures = excluded.failures,
+      locked_until = excluded.locked_until,
+      updated_at = excluded.updated_at
+  `).run(key, failures, lockedUntil, now);
+
   return { locked, retryAfterSeconds };
 }
 
 export function clearAccountLockout(identifier: string): void {
+  if (!identifier) return;
   const key = identifier.trim().toLowerCase();
-  lockoutMap.delete(key);
+  db.prepare('DELETE FROM account_lockouts WHERE identifier = ?').run(key);
 }
 
-export function recordSuccessfulLogin(identifier: string) {
-  lockoutMap.delete(identifier.trim().toLowerCase());
+export function recordSuccessfulLogin(identifier: string): void {
+  clearAccountLockout(identifier);
 }

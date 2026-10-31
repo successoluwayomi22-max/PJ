@@ -127,7 +127,7 @@ export const INITIAL_USERS: User[] = [
     username: 'commander_chief',
     displayName: 'Elena Vance (Editor-in-Chief)',
     email: 'elena@pulsenews.global',
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&auto=format&fit=crop&q=80',
     bio: 'Super-Admin & Founding Executive Editor at Pulse News. Overseeing global fact-verification, AI forensics, and citizen reporter standards.',
     location: 'New York • Global Desk',
     role: 'admin',

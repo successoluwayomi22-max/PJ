@@ -51,14 +51,24 @@ export function seedDatabase() {
   const envAdminPassword = process.env.INITIAL_ADMIN_PASSWORD;
 
   for (const u of INITIAL_USERS) {
+    // ZERO DEFAULT CREDENTIALS & BOOTSTRAP INTEGRITY:
+    // If user is admin but no explicit initial admin credentials are provided via environment,
+    // skip admin seeding so that the secure bootstrap endpoint (POST /api/bootstrap)
+    // remains open for first-run initialization without conflicting with seeded data.
+    if (u.id === 'user-admin' || u.role === 'admin') {
+      if (!envAdminEmail || !envAdminPassword) {
+        continue; // Keep database unbootstrapped so POST /api/bootstrap is ready for initial setup
+      }
+    }
+
     let hash: string;
 
     if (u.id === 'user-admin' && envAdminEmail && envAdminPassword) {
       if (validatePasswordStrength(envAdminPassword).valid) {
         hash = hashPassword(envAdminPassword);
       } else {
-        console.warn('[Seed] INITIAL_ADMIN_PASSWORD did not satisfy enterprise password policy; using unguessable hash.');
-        hash = hashPassword(crypto.randomBytes(32).toString('hex'));
+        console.warn('[Seed] INITIAL_ADMIN_PASSWORD did not satisfy enterprise password policy; skipping auto-admin seed.');
+        continue;
       }
     } else {
       // Unguessable 256-bit random password hashed with scrypt

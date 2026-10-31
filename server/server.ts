@@ -54,12 +54,20 @@ const server = http.createServer(async (req, res) => {
       const mime = MIME_TYPES[ext] || 'application/octet-stream';
       const content = fs.readFileSync(filePath);
 
-      res.writeHead(200, {
+      const headers: Record<string, string> = {
         'Content-Type': mime,
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        'Permissions-Policy': 'camera=(), microphone=(), geolocation=(self)',
         'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
-      });
+      };
+
+      if (process.env.NODE_ENV === 'production') {
+        headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains';
+      }
+
+      res.writeHead(200, headers);
       res.end(content);
       return;
     }

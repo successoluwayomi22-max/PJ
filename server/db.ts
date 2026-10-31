@@ -217,6 +217,13 @@ export function initDatabase() {
       reset_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS account_lockouts (
+      identifier TEXT PRIMARY KEY,
+      failures INTEGER NOT NULL DEFAULT 0,
+      locked_until INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS security_events (
       id TEXT PRIMARY KEY,
       event_type TEXT NOT NULL,
@@ -237,6 +244,7 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON user_sessions(expires_at);
     CREATE INDEX IF NOT EXISTS idx_rate_limits_reset ON rate_limits(reset_at);
+    CREATE INDEX IF NOT EXISTS idx_account_lockouts_locked_until ON account_lockouts(locked_until);
     CREATE INDEX IF NOT EXISTS idx_security_events_time ON security_events(created_at DESC);
   `);
 

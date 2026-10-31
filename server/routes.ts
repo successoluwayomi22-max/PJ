@@ -20,7 +20,10 @@ import {
   resetPasswordWithToken,
   verifyEmailWithToken,
   inspectRequestThreat,
+  createCsrfToken,
+  verifyCsrfToken,
 } from './auth.ts';
+import { sendPasswordResetEmail, sendEmailVerificationEmail } from './email.ts';
 import { hasPermission, getRoleDefinition } from '../src/utils/rbac.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,6 +31,37 @@ const __dirname = path.dirname(__filename);
 const UPLOADS_DIR = path.resolve(__dirname, '..', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+function defaultAvatarSvg(name: string = 'User'): string {
+  const initial = (name.trim().charAt(0) || 'U').toUpperCase();
+  return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="100%" height="100%" fill="%230284c7"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23ffffff" font-family="sans-serif" font-size="52" font-weight="700">${encodeURIComponent(initial)}</text></svg>`;
+}
+
+function hasDangerousSvgContent(svg: string): boolean {
+  const normalized = svg.toLowerCase();
+  const dangerousPatterns = [
+    /<script[\s>]/i,
+    /<\/script>/i,
+    /javascript:/i,
+    /data:\s*text\/html/i,
+    /<foreignobject[\s>]/i,
+    /<iframe[\s>]/i,
+    /<object[\s>]/i,
+    /<embed[\s>]/i,
+    /\bon\w+\s*=/i,
+    /<set[\s>]/i,
+    /<animate[\s>]/i,
+    /xlink:href\s*=\s*['"]\s*javascript:/i,
+  ];
+  return dangerousPatterns.some((pattern) => pattern.test(normalized));
+}
+
+function getSecureCookieHeader(sessionToken: string, maxAgeDays = 30): string {
+  const isProd = process.env.NODE_ENV === 'production';
+  const secureFlag = isProd ? '; Secure' : '';
+  const maxAge = maxAgeDays > 0 ? maxAgeDays * 86400 : 0;
+  return `pulse_session=${encodeURIComponent(sessionToken)}; Path=/; HttpOnly; SameSite=Lax${secureFlag}; Max-Age=${maxAge}`;
 }
 
 // Helper to parse JSON request body
@@ -280,117 +314,168 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
     return true;
   }
 
+  // 0. CSRF TOKEN DISCOVERY ENDPOINT
+  if (pathname === '/api/csrf-token' && method === 'GET') {
+    const sessionToken = getSessionToken(req) || '';
+    const csrfToken = createCsrfToken(sessionToken);
+    sendJson(res, 200, { csrfToken });
+    return true;
+  }
+
+  // 0.1 STATE-CHANGING CSRF & ORIGIN SECURITY ENFORCEMENT
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const publicCsrfExemptions = [
+      '/api/auth/login',
+      '/api/auth/register',
+      '/api/bootstrap',
+      '/api/auth/forgot-password',
+      '/api/auth/reset-password',
+      '/api/auth/verify-email',
+      '/api/consent',
+      '/api/newsletter/subscribe',
+    ];
+
+    if (!publicCsrfExemptions.includes(pathname)) {
+      const sessionToken = getSessionToken(req) || '';
+      const csrfHeader = (req.headers['x-csrf-token'] as string) || '';
+
+      if (sessionToken && !verifyCsrfToken(csrfHeader, sessionToken)) {
+        sendJson(res, 403, {
+          error: 'Invalid or missing CSRF token (X-CSRF-Token). Request rejected.',
+        });
+        return true;
+      }
+    }
+  }
+
   /* =========================================================================
      1. ONE-TIME FIRST-ADMINISTRATOR BOOTSTRAP PROTOCOL
   ========================================================================= */
 
-  // POST /api/bootstrap
+  // POST /api/bootstrap (Atomic Concurrency-Safe One-Time Super Admin Initialization)
   if (pathname === '/api/bootstrap' && method === 'POST') {
-    const existingAdmins = db.prepare(`
-      SELECT count(*) as count FROM users WHERE role IN ('admin', 'super_admin') AND status = 'active'
-    `).get() as { count: number | bigint };
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const existingAdmins = db.prepare(`
+        SELECT count(*) as count FROM users WHERE role IN ('admin', 'super_admin') AND status = 'active'
+      `).get() as { count: number | bigint };
 
-    if (Number(existingAdmins?.count || 0) > 0) {
-      sendJson(res, 403, {
-        error: 'System has already been bootstrapped. Super Administrator already exists. Bootstrap endpoint is permanently locked down.',
-      });
+      if (Number(existingAdmins?.count || 0) > 0) {
+        db.exec('ROLLBACK');
+        sendJson(res, 403, {
+          error: 'System has already been bootstrapped. Super Administrator already exists. Bootstrap endpoint is permanently locked down.',
+        });
+        return true;
+      }
+
+      const body = await parseJsonBody(req);
+      const displayName = String(body.displayName || '').trim();
+      const rawUsername = String(body.username || '').trim().toLowerCase().replace(/^@/, '');
+      const email = String(body.email || '').trim().toLowerCase();
+      const password = String(body.password || '');
+      const bootstrapSecret = String(body.bootstrapSecret || '');
+
+      // If an environment BOOTSTRAP_SECRET is configured, enforce matching
+      const envSecret = process.env.BOOTSTRAP_SECRET;
+      if (envSecret && bootstrapSecret !== envSecret) {
+        db.exec('ROLLBACK');
+        sendJson(res, 401, { error: 'Invalid bootstrap secret.' });
+        return true;
+      }
+
+      if (!displayName || !rawUsername || !email || !password) {
+        db.exec('ROLLBACK');
+        sendJson(res, 400, { error: 'Display name, username, email, and password are required to bootstrap.' });
+        return true;
+      }
+
+      const passCheck = validatePasswordStrength(password);
+      if (!passCheck.valid) {
+        db.exec('ROLLBACK');
+        sendJson(res, 400, { error: passCheck.reason });
+        return true;
+      }
+
+      const adminId = `admin-bootstrap-${Date.now()}`;
+      const pHash = hashPassword(password);
+      const now = new Date().toISOString();
+      const avatar = body.avatarUrl || defaultAvatarSvg(displayName);
+
+      db.prepare(`
+        INSERT INTO users (
+          id, username, display_name, email, password_hash, avatar_url, bio,
+          location, role, status, verification_tier, trust_score, followers_count,
+          reports_count, email_verified, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'super_admin', 'active', 'journalist', 1.0, 0, 0, 1, ?, ?)
+      `).run(
+        adminId,
+        rawUsername,
+        displayName,
+        email,
+        pHash,
+        avatar,
+        'System Super Administrator • Initialized via PULSE Secure Bootstrap Protocol',
+        body.location || 'Headquarters Desk',
+        now,
+        now
+      );
+
+      db.exec('COMMIT');
+
+      logAudit(
+        adminId,
+        'SYSTEM_BOOTSTRAP',
+        `Super Administrator @${rawUsername} initialized successfully. Bootstrap permanently closed.`,
+        adminId,
+        'USER',
+        clientIp
+      );
+
+      const sessionToken = createSession(
+        adminId,
+        clientIp,
+        req.headers['user-agent'] || 'Bootstrap Client',
+        30 * 24 * 3600 * 1000
+      );
+
+      const csrfToken = createCsrfToken(sessionToken);
+
+      const safeUser = {
+        id: adminId,
+        username: rawUsername,
+        displayName,
+        email,
+        avatarUrl: avatar,
+        bio: 'System Super Administrator • Initialized via PULSE Secure Bootstrap Protocol',
+        location: body.location || 'Headquarters Desk',
+        role: 'super_admin',
+        status: 'active',
+        verificationTier: 'journalist',
+        trustScore: 1.0,
+        followersCount: 0,
+        reportsCount: 0,
+        createdAt: now,
+      };
+
+      const cookieHeader = getSecureCookieHeader(sessionToken, 30);
+      sendJson(
+        res,
+        201,
+        {
+          success: true,
+          message: 'Super Administrator initialized successfully.',
+          user: safeUser,
+          token: sessionToken,
+          csrfToken,
+        },
+        { 'Set-Cookie': cookieHeader }
+      );
+      return true;
+    } catch (err: any) {
+      try { db.exec('ROLLBACK'); } catch {}
+      sendJson(res, 500, { error: 'Bootstrap transaction failure: ' + err.message });
       return true;
     }
-
-    const body = await parseJsonBody(req);
-    const displayName = String(body.displayName || '').trim();
-    const rawUsername = String(body.username || '').trim().toLowerCase().replace(/^@/, '');
-    const email = String(body.email || '').trim().toLowerCase();
-    const password = String(body.password || '');
-    const bootstrapSecret = String(body.bootstrapSecret || '');
-
-    // If an environment BOOTSTRAP_SECRET is configured, enforce matching
-    const envSecret = process.env.BOOTSTRAP_SECRET;
-    if (envSecret && bootstrapSecret !== envSecret) {
-      sendJson(res, 401, { error: 'Invalid bootstrap secret.' });
-      return true;
-    }
-
-    if (!displayName || !rawUsername || !email || !password) {
-      sendJson(res, 400, { error: 'Display name, username, email, and password are required to bootstrap.' });
-      return true;
-    }
-
-    const passCheck = validatePasswordStrength(password);
-    if (!passCheck.valid) {
-      sendJson(res, 400, { error: passCheck.reason });
-      return true;
-    }
-
-    const adminId = `admin-bootstrap-${Date.now()}`;
-    const pHash = hashPassword(password);
-    const now = new Date().toISOString();
-
-    db.prepare(`
-      INSERT INTO users (
-        id, username, display_name, email, password_hash, avatar_url, bio,
-        location, role, status, verification_tier, trust_score, followers_count,
-        reports_count, email_verified, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'super_admin', 'active', 'journalist', 1.0, 0, 0, 1, ?, ?)
-    `).run(
-      adminId,
-      rawUsername,
-      displayName,
-      email,
-      pHash,
-      body.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
-      'System Super Administrator • Initialized via PULSE Secure Bootstrap Protocol',
-      body.location || 'Headquarters Desk',
-      now,
-      now
-    );
-
-    logAudit(
-      adminId,
-      'SYSTEM_BOOTSTRAP',
-      `Super Administrator @${rawUsername} initialized successfully. Bootstrap permanently closed.`,
-      adminId,
-      'USER',
-      clientIp
-    );
-
-    const sessionToken = createSession(
-      adminId,
-      clientIp,
-      req.headers['user-agent'] || 'Bootstrap Client',
-      30 * 24 * 3600 * 1000
-    );
-
-    const safeUser = {
-      id: adminId,
-      username: rawUsername,
-      displayName,
-      email,
-      avatarUrl: body.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
-      bio: 'System Super Administrator • Initialized via PULSE Secure Bootstrap Protocol',
-      location: body.location || 'Headquarters Desk',
-      role: 'super_admin',
-      status: 'active',
-      verificationTier: 'journalist',
-      trustScore: 1.0,
-      followersCount: 0,
-      reportsCount: 0,
-      createdAt: now,
-    };
-
-    const cookieHeader = `pulse_session=${encodeURIComponent(sessionToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`;
-    sendJson(
-      res,
-      201,
-      {
-        success: true,
-        message: 'Super Administrator initialized successfully.',
-        user: safeUser,
-        token: sessionToken,
-      },
-      { 'Set-Cookie': cookieHeader }
-    );
-    return true;
   }
 
   /* =========================================================================
@@ -468,10 +553,13 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
     const safeUser = { ...userRow };
     delete safeUser.passwordHash;
 
-    const cookieHeader = `pulse_session=${encodeURIComponent(sessionToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`;
+    const cookieHeader = getSecureCookieHeader(sessionToken, 30);
+    const csrfToken = createCsrfToken(sessionToken);
+
     sendJson(res, 200, {
       user: safeUser,
       token: sessionToken,
+      csrfToken,
       role: roleData,
       permissions: roleData?.permissions || [],
     }, { 'Set-Cookie': cookieHeader });
@@ -511,6 +599,7 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
     const userId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const passwordHash = hashPassword(password);
     const now = new Date().toISOString();
+    const avatar = body.avatarUrl || defaultAvatarSvg(displayName);
 
     db.prepare(`
       INSERT INTO users (
@@ -524,7 +613,7 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
       displayName,
       email,
       passwordHash,
-      body.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+      avatar,
       body.bio || `${displayName} • Contributor at Pulse News Network`,
       body.location || 'Global Desk',
       requestedRole,
@@ -546,7 +635,7 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
       username: rawUsername,
       displayName,
       email,
-      avatarUrl: body.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+      avatarUrl: avatar,
       bio: body.bio || `${displayName} • Contributor at Pulse News Network`,
       location: body.location || 'Global Desk',
       role: requestedRole,
@@ -559,11 +648,13 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
     };
 
     const roleData = getRoleDefinition(requestedRole);
-    const cookieHeader = `pulse_session=${encodeURIComponent(sessionToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`;
+    const cookieHeader = getSecureCookieHeader(sessionToken, 30);
+    const csrfToken = createCsrfToken(sessionToken);
 
     sendJson(res, 201, {
       user: safeUser,
       token: sessionToken,
+      csrfToken,
       role: roleData,
       permissions: roleData?.permissions || [],
     }, { 'Set-Cookie': cookieHeader });
@@ -579,10 +670,12 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
     }
 
     const roleData = getRoleDefinition(auth.user.role);
+    const csrfToken = createCsrfToken(auth.session.token);
     sendJson(res, 200, {
       user: auth.user,
       role: roleData,
       permissions: roleData?.permissions || [],
+      csrfToken,
     });
     return true;
   }
@@ -593,7 +686,7 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
     if (token) {
       revokeSession(token);
     }
-    const clearCookie = 'pulse_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+    const clearCookie = getSecureCookieHeader('', 0);
     sendJson(res, 200, { success: true, message: 'Logged out successfully.' }, { 'Set-Cookie': clearCookie });
     return true;
   }
@@ -687,7 +780,7 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
 
     db.prepare('DELETE FROM users WHERE id = ?').run(auth.user.id);
 
-    const clearCookie = 'pulse_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+    const clearCookie = getSecureCookieHeader('', 0);
     sendJson(res, 200, { success: true, message: 'Account and personal data erased.' }, { 'Set-Cookie': clearCookie });
     return true;
   }
@@ -714,6 +807,17 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
 
     const tokenData = createPasswordResetToken(identifier);
 
+    // If an active user matched, dispatch secure password reset email
+    if (tokenData) {
+      const cleanHandle = identifier.toLowerCase().replace(/^@/, '');
+      const userRow = db.prepare('SELECT email FROM users WHERE (LOWER(email) = ? OR LOWER(username) = ?) AND status = ?').get(identifier.toLowerCase(), cleanHandle, 'active') as { email: string } | undefined;
+      if (userRow?.email) {
+        const proto = (req.headers['x-forwarded-proto'] as string) || (req.headers.host?.includes('localhost') ? 'http' : 'https');
+        const appUrl = `${proto}://${req.headers.host || 'localhost:5173'}`;
+        await sendPasswordResetEmail(userRow.email, tokenData.token, appUrl);
+      }
+    }
+
     // Anti-user-enumeration: always respond with identical success confirmation
     logAudit(
       'SYSTEM',
@@ -727,7 +831,7 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
     sendJson(res, 200, {
       success: true,
       message: 'If an active account is registered with that identifier, a secure reset instruction has been dispatched.',
-      // In development or test sandbox, provide token in response for testing
+      // In development or test sandbox, provide token in response for automated testing
       ...(process.env.NODE_ENV !== 'production' && tokenData ? { devToken: tokenData.token } : {}),
     });
     return true;
@@ -848,9 +952,16 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
       ext = '.gif';
       validatedMime = 'image/gif';
     } else if (
-      fileBuffer.slice(0, 100).toString('utf8').includes('<svg') &&
-      !/<script/i.test(fileBuffer.toString('utf8'))
+      fileBuffer.slice(0, 100).toString('utf8').includes('<svg') ||
+      fileBuffer.toString('utf8').includes('xmlns="http://www.w3.org/2000/svg"')
     ) {
+      const svgText = fileBuffer.toString('utf8');
+      if (hasDangerousSvgContent(svgText)) {
+        sendJson(res, 400, {
+          error: 'Security threat: SVG contains potentially dangerous executable content (scripts, event handlers, or embedded objects).',
+        });
+        return true;
+      }
       ext = '.svg';
       validatedMime = 'image/svg+xml';
     } else if (fileBuffer.slice(4, 8).toString('ascii') === 'ftyp') {

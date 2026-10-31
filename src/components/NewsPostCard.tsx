@@ -377,7 +377,7 @@ export const NewsPostCard: React.FC<NewsPostCardProps> = ({
               <img
                 src={
                   author?.avatarUrl ||
-                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120'
+                  `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="100%" height="100%" fill="%230284c7"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23ffffff" font-family="sans-serif" font-size="52" font-weight="700">${encodeURIComponent((author?.displayName?.[0] || 'A').toUpperCase())}</text></svg>`
                 }
                 alt={author?.displayName}
                 className="w-10 h-10 rounded-full object-cover hover:opacity-90 transition-opacity"

@@ -17,6 +17,8 @@ import {
   createEmailVerificationToken,
   verifyEmailWithToken,
   inspectRequestThreat,
+  createCsrfToken,
+  verifyCsrfToken,
 } from '../../server/auth.ts';
 import { db, initDatabase } from '../../server/db.ts';
 import { hasPermission, canTransitionWorkflow } from '../utils/rbac.ts';
@@ -355,5 +357,92 @@ describe('PULSE News Enterprise Backend & Authentication Security', () => {
     const xss = inspectRequestThreat('/api/articles', '<script>alert(1)</script>');
     assert.strictEqual(xss.isThreat, true);
     assert.strictEqual(xss.threatType, 'XSS_ATTACK');
+  });
+
+  it('9. Persistent SQLite Account Lockout Store Verification', () => {
+    const target = 'sqlite_lockout_user@pulsenews.global';
+    clearAccountLockout(target);
+
+    // Initial state: not in account_lockouts
+    let row = db.prepare('SELECT failures, locked_until FROM account_lockouts WHERE identifier = ?').get(target) as any;
+    assert.strictEqual(row, undefined);
+
+    // 5 failures
+    for (let i = 0; i < 5; i++) {
+      recordFailedLogin(target);
+    }
+
+    // Direct SQLite check
+    row = db.prepare('SELECT failures, locked_until FROM account_lockouts WHERE identifier = ?').get(target) as any;
+    assert.ok(row);
+    assert.strictEqual(row.failures, 5);
+    assert.ok(row.locked_until > Date.now());
+
+    // checkAccountLockout reports locked
+    const status = checkAccountLockout(target);
+    assert.strictEqual(status.locked, true);
+    assert.ok(status.retryAfterSeconds > 0);
+
+    // Clear deletes from SQLite
+    clearAccountLockout(target);
+    row = db.prepare('SELECT failures FROM account_lockouts WHERE identifier = ?').get(target) as any;
+    assert.strictEqual(row, undefined);
+  });
+
+  it('10. CSRF Token Lifecycle: HMAC-SHA256 Generation & Constant-Time Verification', () => {
+    const sessionTokenA = 'session-token-alpha-1234567890abcdef';
+    const sessionTokenB = 'session-token-beta-abcdef1234567890';
+
+    const csrfA = createCsrfToken(sessionTokenA);
+    const csrfB = createCsrfToken(sessionTokenB);
+
+    assert.ok(csrfA);
+    assert.ok(csrfB);
+    assert.notStrictEqual(csrfA, csrfB);
+
+    // Valid token matches session
+    assert.strictEqual(verifyCsrfToken(csrfA, sessionTokenA), true);
+    assert.strictEqual(verifyCsrfToken(csrfB, sessionTokenB), true);
+
+    // Mismatched token fails
+    assert.strictEqual(verifyCsrfToken(csrfA, sessionTokenB), false);
+    assert.strictEqual(verifyCsrfToken(csrfB, sessionTokenA), false);
+
+    // Forged/empty token fails
+    assert.strictEqual(verifyCsrfToken('forged-csrf-token', sessionTokenA), false);
+    assert.strictEqual(verifyCsrfToken('', sessionTokenA), false);
+  });
+
+  it('11. Malicious SVG Content Threat Detection', () => {
+    function hasDangerousSvg(svg: string): boolean {
+      const normalized = svg.toLowerCase();
+      const dangerousPatterns = [
+        /<script[\s>]/i,
+        /<\/script>/i,
+        /javascript:/i,
+        /data:\s*text\/html/i,
+        /<foreignobject[\s>]/i,
+        /<iframe[\s>]/i,
+        /<object[\s>]/i,
+        /<embed[\s>]/i,
+        /\bon\w+\s*=/i,
+        /<set[\s>]/i,
+        /<animate[\s>]/i,
+        /xlink:href\s*=\s*['"]\s*javascript:/i,
+      ];
+      return dangerousPatterns.some((pattern) => pattern.test(normalized));
+    }
+
+    // Clean valid SVG
+    const safeSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><circle cx="50" cy="50" r="40" fill="red"/></svg>';
+    assert.strictEqual(hasDangerousSvg(safeSvg), false);
+
+    // Malicious vectors
+    assert.strictEqual(hasDangerousSvg('<svg><script>alert(1)</script></svg>'), true);
+    assert.strictEqual(hasDangerousSvg('<svg onload="alert(document.cookie)"></svg>'), true);
+    assert.strictEqual(hasDangerousSvg('<svg><image href="javascript:alert(1)"/></svg>'), true);
+    assert.strictEqual(hasDangerousSvg('<svg><foreignObject><body><script>bad()</script></body></foreignObject></svg>'), true);
+    assert.strictEqual(hasDangerousSvg('<svg><a xlink:href="javascript:evil()"><circle r="10"/></a></svg>'), true);
+    assert.strictEqual(hasDangerousSvg('<svg><rect onerror="evil()"/></svg>'), true);
   });
 });

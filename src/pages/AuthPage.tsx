@@ -1,7 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
   Camera,
   Check,
   Eye,
@@ -67,9 +66,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [bureau, setBureau] = useState('London, UK');
   const [accountRole, setAccountRole] = useState<'creator' | 'reader'>('reader');
   const [registerError, setRegisterError] = useState<string | null>(null);
-  const [avatarPreview, setAvatarPreview] = useState(
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80'
-  );
+  const [avatarPreview, setAvatarPreview] = useState<string>('');
   const regAvatarInputRef = useRef<HTMLInputElement>(null);
 
   // Forgot password modal state
@@ -231,6 +228,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
 
     const isCreator = accountRole === 'creator';
+    const effectiveAvatar =
+      avatarPreview.trim() ||
+      `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="100%" height="100%" fill="%230284c7"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23ffffff" font-family="sans-serif" font-size="52" font-weight="700">${encodeURIComponent((name[0] || 'U').toUpperCase())}</text></svg>`;
+
     try {
       const res = await api.register({
         displayName: name,
@@ -238,7 +239,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         email: cleanEmail,
         password: password,
         role: isCreator ? 'journalist' : 'reader',
-        avatarUrl: avatarPreview,
+        avatarUrl: effectiveAvatar,
         location: bureau.trim() || 'London, UK',
       });
       onCreateUser(res.user);
@@ -251,7 +252,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         displayName: name,
         email: cleanEmail,
         password: password,
-        avatarUrl: avatarPreview,
+        avatarUrl: effectiveAvatar,
         bio: isCreator
           ? 'Accredited Journalist & Creator publishing verified field dispatches on Pulse News.'
           : 'Verified Reader & Community Contributor on Pulse News.',
@@ -474,11 +475,21 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   className="relative group cursor-pointer shrink-0"
                   title="Upload profile picture"
                 >
-                  <img
-                    src={avatarPreview}
-                    alt="Profile preview"
-                    className="w-12 h-12 rounded-full object-cover ring-2 ring-sky-400/40"
-                  />
+                  {avatarPreview ? (
+                    <img
+                      src={avatarPreview}
+                      alt="Profile preview"
+                      className="w-12 h-12 rounded-full object-cover ring-2 ring-sky-400/40"
+                    />
+                  ) : (
+                    <div
+                      className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-sm select-none border ${
+                        isDark ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-100 text-slate-600 border-slate-200'
+                      }`}
+                    >
+                      {displayName.trim() ? displayName.trim().charAt(0).toUpperCase() : <UserIcon className="w-5 h-5 opacity-60" />}
+                    </div>
+                  )}
                   <span
                     className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full flex items-center justify-center text-slate-950 shadow"
                     style={{ backgroundColor: primaryColor }}
@@ -779,16 +790,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           )}
         </div>
 
-        <div className="flex items-center justify-between text-xs pt-4 border-t border-slate-500/15">
-          <button
-            type="button"
-            onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Feed</span>
-          </button>
-          <span className="opacity-50">Pulse News Network • Privacy &amp; Standards</span>
+        <div className="flex items-center justify-center text-xs pt-4 border-t border-slate-500/15">
+          <span className="opacity-50">Pulse News Network • Editorial Standards &amp; Privacy Architecture</span>
         </div>
       </div>
 
