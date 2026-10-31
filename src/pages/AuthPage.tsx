@@ -10,6 +10,7 @@ import {
   Lock,
   Mail,
   MapPin,
+  ShieldAlert,
   ShieldCheck,
   Upload,
   User as UserIcon,
@@ -19,6 +20,7 @@ import { User } from '../types';
 import {
   checkLoginRateLimit,
   checkPasswordStrength,
+  inspectWAFPayload,
   recordLoginFailure,
   recordLoginSuccess,
 } from '../utils/security';
@@ -83,6 +85,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     e.preventDefault();
     const search = loginEmail.trim().toLowerCase();
     const cleanHandle = search.replace(/^@/, '');
+
+    // 0. WAF & L7 Intrusion Inspection
+    const wafCheck = inspectWAFPayload(`${loginEmail} ${loginPassword}`);
+    if (wafCheck.isBlocked) {
+      setLoginError(wafCheck.reason || 'Blocked by Web Application Firewall (WAF)');
+      return;
+    }
 
     if (!search) {
       setLoginError('Please enter your email address or @username.');
@@ -177,8 +186,19 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       return;
     }
 
-    if (password.length < 6) {
-      setRegisterError('Password must be at least 6 characters long.');
+    // 0. WAF & L7 Intrusion Inspection
+    const wafCheck = inspectWAFPayload(`${name} ${cleanHandle} ${cleanEmail} ${bureau}`);
+    if (wafCheck.isBlocked) {
+      setRegisterError(wafCheck.reason || 'Blocked by Web Application Firewall (WAF)');
+      return;
+    }
+
+    // 1. Strict 8+ Character Password with Figures & Specials Policy
+    const strength = checkPasswordStrength(password);
+    if (!strength.passed) {
+      setRegisterError(
+        'Password does not meet required security standards: At least 8 characters, with uppercase, lowercase, numbers/figures, and special characters (!@#$%^&*) required.'
+      );
       return;
     }
 
@@ -499,7 +519,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                         setPassword(e.target.value);
                         setRegisterError(null);
                       }}
-                      placeholder="At least 6 characters"
+                      placeholder="At least 8 characters (mixed case, number, special)"
                       className="w-full pl-3 pr-9 py-2.5 rounded-xl bg-slate-500/[0.06] border border-slate-500/20 text-sm focus:outline-none focus:border-sky-400"
                     />
                     <button
@@ -511,11 +531,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     </button>
                   </div>
                   {password && (
-                    <div className="mt-1.5 space-y-1">
+                    <div className="mt-2 space-y-2 text-[11px]">
                       <div className="flex items-center justify-between text-[10px]">
-                        <span className="opacity-60">Strength:</span>
+                        <span className="opacity-60">Security Level:</span>
                         <span
-                          className="font-semibold"
+                          className="font-bold"
                           style={{
                             color:
                               checkPasswordStrength(password).score <= 1
@@ -528,9 +548,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                           }}
                         >
                           {checkPasswordStrength(password).label}
+                          {checkPasswordStrength(password).passed && ' (Enterprise Compliant)'}
                         </span>
                       </div>
-                      <div className="h-1 w-full bg-slate-500/20 rounded-full overflow-hidden">
+                      <div className="h-1.5 w-full bg-slate-500/20 rounded-full overflow-hidden">
                         <div
                           className="h-full transition-all duration-300"
                           style={{
@@ -545,6 +566,51 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                                 : '#10b981',
                           }}
                         />
+                      </div>
+
+                      {/* Live Security Criteria Checklist */}
+                      <div className="grid grid-cols-2 gap-1.5 pt-1 text-[10px] font-mono">
+                        <span
+                          className={`flex items-center gap-1 ${
+                            checkPasswordStrength(password).criteria.minLength
+                              ? 'text-emerald-400 font-semibold'
+                              : 'opacity-50'
+                          }`}
+                        >
+                          {checkPasswordStrength(password).criteria.minLength ? '✓' : '○'} 8+ characters
+                        </span>
+                        <span
+                          className={`flex items-center gap-1 ${
+                            checkPasswordStrength(password).criteria.hasUppercase &&
+                            checkPasswordStrength(password).criteria.hasLowercase
+                              ? 'text-emerald-400 font-semibold'
+                              : 'opacity-50'
+                          }`}
+                        >
+                          {checkPasswordStrength(password).criteria.hasUppercase &&
+                          checkPasswordStrength(password).criteria.hasLowercase
+                            ? '✓'
+                            : '○'}{' '}
+                          Upper &amp; lower case
+                        </span>
+                        <span
+                          className={`flex items-center gap-1 ${
+                            checkPasswordStrength(password).criteria.hasNumber
+                              ? 'text-emerald-400 font-semibold'
+                              : 'opacity-50'
+                          }`}
+                        >
+                          {checkPasswordStrength(password).criteria.hasNumber ? '✓' : '○'} Number / figure
+                        </span>
+                        <span
+                          className={`flex items-center gap-1 ${
+                            checkPasswordStrength(password).criteria.hasSpecial
+                              ? 'text-emerald-400 font-semibold'
+                              : 'opacity-50'
+                          }`}
+                        >
+                          {checkPasswordStrength(password).criteria.hasSpecial ? '✓' : '○'} Special char (!@#$)
+                        </span>
                       </div>
                     </div>
                   )}

@@ -17,13 +17,23 @@ import {
   Pin,
   RefreshCw,
   RotateCcw,
+  ShieldAlert,
   ShieldCheck,
   Sliders,
   Terminal,
   Trash2,
   Upload,
   Users,
+  Zap,
 } from 'lucide-react';
+import {
+  clearWAFIncidents,
+  getBlockedClients,
+  getWAFIncidents,
+  simulateSecurityAttack,
+  unbanClient,
+  WAFIncident,
+} from '../utils/security';
 import {
   AuditLogEntry,
   CommunityNote,
@@ -64,8 +74,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 }) => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<
-    'overview' | 'users' | 'branding' | 'telemetry' | 'algorithm' | 'audit'
+    'overview' | 'users' | 'branding' | 'cyber_defense' | 'telemetry' | 'algorithm' | 'audit'
   >('overview');
+
+  const [wafIncidents, setWafIncidents] = useState<WAFIncident[]>(() => getWAFIncidents());
+  const [blockedClients, setBlockedClients] = useState(() => getBlockedClients());
+
+  const refreshCyberDefenseState = () => {
+    setWafIncidents(getWAFIncidents());
+    setBlockedClients(getBlockedClients());
+  };
 
   const [uploadTargetUserId, setUploadTargetUserId] = useState<string | null>(null);
   const userAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -322,6 +340,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 { id: 'overview', label: 'Overview & Moderation', icon: Layers },
                 { id: 'users', label: `Correspondents (${users.length})`, icon: Users },
                 { id: 'branding', label: 'Brand & Color Studio', icon: Palette },
+                { id: 'cyber_defense', label: 'Firewall & IDS / IPS (Live)', icon: ShieldAlert },
                 { id: 'telemetry', label: 'V8 Heap & Telemetry', icon: Cpu },
                 { id: 'algorithm', label: 'Feed Ranking & Automation', icon: Sliders },
                 { id: 'audit', label: `Audit History (${auditLogs.length})`, icon: History },
@@ -1103,6 +1122,250 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     </label>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              SECTION: WEB APPLICATION FIREWALL (WAF) & L7 IDS / IPS
+          ================================================================= */}
+          {activeSection === 'cyber_defense' && (
+            <div className="space-y-6">
+              {/* Telemetry Metric Cluster */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div
+                  style={{ backgroundColor: cardBgColor }}
+                  className="p-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.04] space-y-1.5"
+                >
+                  <div className="flex items-center justify-between text-xs font-mono text-emerald-400">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      FIREWALL STATUS
+                    </span>
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div className="text-xl font-bold tracking-tight text-emerald-400">ENFORCING (L7)</div>
+                  <div className="text-[11px] opacity-60">Full OWASP Top 10 rules active</div>
+                </div>
+
+                <div
+                  style={{ backgroundColor: cardBgColor }}
+                  className="p-5 rounded-2xl border border-sky-500/30 bg-sky-500/[0.04] space-y-1.5"
+                >
+                  <div className="flex items-center justify-between text-xs font-mono text-sky-400">
+                    <span>CRYPTOGRAPHY</span>
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <div className="text-xl font-bold tracking-tight text-sky-400">AES-256-GCM</div>
+                  <div className="text-[11px] opacity-60">PBKDF2 SHA-256 derivation</div>
+                </div>
+
+                <div
+                  style={{ backgroundColor: cardBgColor }}
+                  className="p-5 rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] space-y-1.5"
+                >
+                  <div className="flex items-center justify-between text-xs font-mono text-amber-400">
+                    <span>INCIDENTS BLOCKED</span>
+                    <ShieldAlert className="w-4 h-4" />
+                  </div>
+                  <div className="text-xl font-bold tracking-tight text-amber-400">
+                    {wafIncidents.length} Attacks
+                  </div>
+                  <div className="text-[11px] opacity-60">Zero malicious escapes</div>
+                </div>
+
+                <div
+                  style={{ backgroundColor: cardBgColor }}
+                  className="p-5 rounded-2xl border border-rose-500/30 bg-rose-500/[0.04] space-y-1.5"
+                >
+                  <div className="flex items-center justify-between text-xs font-mono text-rose-400">
+                    <span>QUARANTINED IPS</span>
+                    <Zap className="w-4 h-4" />
+                  </div>
+                  <div className="text-xl font-bold tracking-tight text-rose-400">
+                    {blockedClients.length} Host{blockedClients.length === 1 ? '' : 's'}
+                  </div>
+                  <div className="text-[11px] opacity-60">Automatic progressive lockout</div>
+                </div>
+              </div>
+
+              {/* Threat Engine & Attack Simulator */}
+              <div
+                style={{ backgroundColor: cardBgColor }}
+                className="p-6 rounded-2xl border border-slate-500/15 space-y-4"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold flex items-center gap-2">
+                      <ShieldAlert className="w-5 h-5 text-amber-400" />
+                      <span>Interactive Security Testing Suite</span>
+                    </h3>
+                    <p className="text-xs opacity-65 mt-0.5">
+                      Trigger test cyber-attacks against the L7 intrusion engine to verify real-time mitigation and telemetry recording.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        simulateSecurityAttack('SQL_INJECTION');
+                        refreshCyberDefenseState();
+                      }}
+                      className="px-3 py-1.5 rounded-xl border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 text-xs font-semibold"
+                    >
+                      Test SQLi Attack
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        simulateSecurityAttack('XSS_ATTACK');
+                        refreshCyberDefenseState();
+                      }}
+                      className="px-3 py-1.5 rounded-xl border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 text-xs font-semibold"
+                    >
+                      Test XSS Attack
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        simulateSecurityAttack('PATH_TRAVERSAL');
+                        refreshCyberDefenseState();
+                      }}
+                      className="px-3 py-1.5 rounded-xl border border-sky-500/40 text-sky-400 hover:bg-sky-500/10 text-xs font-semibold"
+                    >
+                      Test Path Traversal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearWAFIncidents();
+                        refreshCyberDefenseState();
+                      }}
+                      className="px-3 py-1.5 rounded-xl border border-slate-500/30 hover:bg-slate-500/10 text-xs font-medium"
+                    >
+                      Clear Incident Log
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quarantined Host IPs Table */}
+              <div
+                style={{ backgroundColor: cardBgColor }}
+                className="p-6 rounded-2xl border border-slate-500/15 space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-semibold flex items-center gap-2 text-rose-400">
+                    <Zap className="w-4 h-4" />
+                    <span>Quarantined &amp; Banned Host IPs ({blockedClients.length})</span>
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={refreshCyberDefenseState}
+                    className="text-xs font-mono opacity-60 hover:opacity-100 flex items-center gap-1"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Refresh
+                  </button>
+                </div>
+
+                {blockedClients.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] text-xs text-emerald-400 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 shrink-0" />
+                    <span>Zero hostile IP addresses currently quarantined. Network perimeter secure.</span>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-500/15 text-xs">
+                    {blockedClients.map((client) => {
+                      const remainingSec = Math.max(
+                        0,
+                        Math.round((client.bannedUntil - Date.now()) / 1000)
+                      );
+                      return (
+                        <div
+                          key={client.clientIp}
+                          className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        >
+                          <div>
+                            <div className="font-mono font-bold text-rose-400 flex items-center gap-2">
+                              <span>{client.clientIp}</span>
+                              <span className="px-2 py-0.5 rounded text-[10px] bg-rose-500/15">
+                                Quarantined ({remainingSec}s remaining)
+                              </span>
+                            </div>
+                            <div className="text-[11px] opacity-70 mt-0.5">
+                              Reason: {client.reason}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              unbanClient(client.clientIp);
+                              refreshCyberDefenseState();
+                            }}
+                            className="px-3 py-1 rounded-lg border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 text-xs font-semibold self-start sm:self-auto"
+                          >
+                            Unban &amp; Restore
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Live Threat Incident Log Table */}
+              <div
+                style={{ backgroundColor: cardBgColor }}
+                className="p-6 rounded-2xl border border-slate-500/15 space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-semibold flex items-center gap-2">
+                    <Terminal className="w-4 h-4 text-sky-400" />
+                    <span>Real-Time WAF Threat Telemetry Feed ({wafIncidents.length})</span>
+                  </h3>
+                  <div className="text-[10px] font-mono opacity-60">Sliding Window: 100 Events</div>
+                </div>
+
+                {wafIncidents.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-slate-500/20 text-xs opacity-60">
+                    No threat events logged in this session yet. Run a simulation above to test.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-500/15 text-xs font-mono">
+                    {wafIncidents.slice(0, 15).map((inc) => (
+                      <div
+                        key={inc.id}
+                        className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-[10px]">
+                            <span
+                              className={`px-2 py-0.5 rounded uppercase font-bold ${
+                                inc.severity === 'CRITICAL'
+                                  ? 'bg-rose-500/20 text-rose-400'
+                                  : 'bg-amber-500/20 text-amber-400'
+                              }`}
+                            >
+                              {inc.ruleId} • {inc.threatType}
+                            </span>
+                            <span className="opacity-50">{new Date(inc.timestamp).toLocaleTimeString()}</span>
+                            <span className="opacity-70 font-semibold">{inc.clientIp}</span>
+                          </div>
+                          <div className="text-[11px] text-rose-300 font-sans truncate max-w-xl">
+                            {inc.ruleDescription}
+                          </div>
+                          <div className="text-[10px] opacity-60 bg-black/20 p-1.5 rounded truncate max-w-lg">
+                            Payload: {inc.snippet}
+                          </div>
+                        </div>
+
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 self-start sm:self-auto shrink-0">
+                          {inc.actionTaken}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -18,6 +18,11 @@ import {
   X,
 } from 'lucide-react';
 import { NewsPost, User } from '../types';
+import {
+  checkPasswordStrength,
+  encryptDataAES,
+  inspectWAFPayload,
+} from '../utils/security';
 
 interface AccountSettingsModalProps {
   isOpen: boolean;
@@ -101,14 +106,25 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     setPasswordError(null);
     setPasswordSuccess(null);
 
+    // 0. WAF & L7 Injection Inspection
+    const wafCheck = inspectWAFPayload(`${currentPassword} ${newPassword}`);
+    if (wafCheck.isBlocked) {
+      setPasswordError(wafCheck.reason || 'Blocked by Web Application Firewall (WAF)');
+      return;
+    }
+
     // Verify current password if user has one
     if (currentUser.password && currentPassword !== currentUser.password) {
       setPasswordError('Current password does not match.');
       return;
     }
 
-    if (newPassword.length < 6) {
-      setPasswordError('New password must be at least 6 characters long.');
+    // 1. Strict 8+ Character Password with Figures & Specials Policy
+    const strength = checkPasswordStrength(newPassword);
+    if (!strength.passed) {
+      setPasswordError(
+        'Password does not meet required security standards: At least 8 characters, with uppercase, lowercase, numbers/figures, and special characters (!@#$%^&*) required.'
+      );
       return;
     }
 
@@ -118,41 +134,42 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     }
 
     onUpdateUser(currentUser.id, { password: newPassword }, 'Changed account security password');
-    setPasswordSuccess('Password successfully updated.');
+    setPasswordSuccess('Password successfully updated with cryptographic strength.');
     setCurrentPassword('');
     setNewPassword('');
     setConfirmNewPassword('');
     setTimeout(() => setPasswordSuccess(null), 3500);
   };
 
-  const handleDownloadMyData = () => {
-    const archiveData = {
-      user: {
-        id: currentUser.id,
-        username: currentUser.username,
-        displayName: currentUser.displayName,
-        email: currentUser.email,
-        bio: currentUser.bio,
-        location: currentUser.location,
-        role: currentUser.role,
-        verificationTier: currentUser.verificationTier,
-        trustScore: currentUser.trustScore,
-        joinedAt: currentUser.joinedAt,
-      },
-      dispatches: userPosts.map((p) => ({
-        id: p.id,
-        headline: p.headline,
-        bodyText: p.bodyText,
-        category: p.category,
-        location: p.locationName,
-        createdAt: p.createdAt,
-        c2paForensics: p.forensics,
-      })),
-      bookmarkedPostIds: bookmarkedIds,
-      exportTimestamp: new Date().toISOString(),
-      legalJurisdiction: 'Nigeria Data Protection Act (NDPA) & GDPR Data Subject Request',
-    };
+  const getArchiveData = () => ({
+    user: {
+      id: currentUser.id,
+      username: currentUser.username,
+      displayName: currentUser.displayName,
+      email: currentUser.email,
+      bio: currentUser.bio,
+      location: currentUser.location,
+      role: currentUser.role,
+      verificationTier: currentUser.verificationTier,
+      trustScore: currentUser.trustScore,
+      joinedAt: currentUser.joinedAt,
+    },
+    dispatches: userPosts.map((p) => ({
+      id: p.id,
+      headline: p.headline,
+      bodyText: p.bodyText,
+      category: p.category,
+      location: p.locationName,
+      createdAt: p.createdAt,
+      c2paForensics: p.forensics,
+    })),
+    bookmarkedPostIds: bookmarkedIds,
+    exportTimestamp: new Date().toISOString(),
+    legalJurisdiction: 'Nigeria Data Protection Act (NDPA) & GDPR Data Subject Request',
+  });
 
+  const handleDownloadMyData = () => {
+    const archiveData = getArchiveData();
     const blob = new Blob([JSON.stringify(archiveData, null, 2)], {
       type: 'application/json',
     });
@@ -162,6 +179,39 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     a.download = `pulsenews_export_${currentUser.username}_${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const [encryptedExportStatus, setEncryptedExportStatus] = useState<string | null>(null);
+
+  const handleDownloadEncryptedData = async () => {
+    setEncryptedExportStatus('Encrypting with AES-256-GCM...');
+    try {
+      const archiveData = getArchiveData();
+      const rawJson = JSON.stringify(archiveData, null, 2);
+      const secretKey = currentUser.password || 'pulse-secure-vault-2026';
+      const encrypted = await encryptDataAES(rawJson, secretKey);
+      const encryptedPayload = {
+        algorithm: 'AES-256-GCM',
+        keyDerivation: 'PBKDF2-SHA256 (100,000 iterations)',
+        encryptedAt: new Date().toISOString(),
+        username: currentUser.username,
+        ...encrypted,
+      };
+      const blob = new Blob([JSON.stringify(encryptedPayload, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pulsenews_encrypted_vault_${currentUser.username}_${Date.now()}.enc.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setEncryptedExportStatus('AES-256 Vault downloaded successfully!');
+      setTimeout(() => setEncryptedExportStatus(null), 3000);
+    } catch {
+      setEncryptedExportStatus('Encryption failed.');
+      setTimeout(() => setEncryptedExportStatus(null), 3000);
+    }
   };
 
   const handleExecuteDeletion = (e: React.FormEvent) => {
@@ -386,9 +436,92 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                   required
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="At least 6 characters"
+                  placeholder="At least 8 characters (mixed case, numbers, special)"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-500/[0.06] border border-slate-500/20 text-xs focus:outline-none focus:border-sky-400"
                 />
+                {newPassword && (
+                  <div className="mt-2 space-y-1.5 text-[11px]">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="opacity-60">Security Level:</span>
+                      <span
+                        className="font-bold"
+                        style={{
+                          color:
+                            checkPasswordStrength(newPassword).score <= 1
+                              ? '#f43f5e'
+                              : checkPasswordStrength(newPassword).score === 2
+                              ? '#f59e0b'
+                              : checkPasswordStrength(newPassword).score === 3
+                              ? '#38bdf8'
+                              : '#10b981',
+                        }}
+                      >
+                        {checkPasswordStrength(newPassword).label}
+                        {checkPasswordStrength(newPassword).passed && ' (Enterprise Compliant)'}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-500/20 rounded-full overflow-hidden">
+                      <div
+                        className="h-full transition-all duration-300"
+                        style={{
+                          width: `${(checkPasswordStrength(newPassword).score / 4) * 100}%`,
+                          backgroundColor:
+                            checkPasswordStrength(newPassword).score <= 1
+                              ? '#f43f5e'
+                              : checkPasswordStrength(newPassword).score === 2
+                              ? '#f59e0b'
+                              : checkPasswordStrength(newPassword).score === 3
+                              ? '#38bdf8'
+                              : '#10b981',
+                        }}
+                      />
+                    </div>
+                    {/* Live Criteria Checklist */}
+                    <div className="grid grid-cols-2 gap-1 pt-1 text-[10px] font-mono">
+                      <span
+                        className={`flex items-center gap-1 ${
+                          checkPasswordStrength(newPassword).criteria.minLength
+                            ? 'text-emerald-400 font-semibold'
+                            : 'opacity-50'
+                        }`}
+                      >
+                        {checkPasswordStrength(newPassword).criteria.minLength ? '✓' : '○'} 8+ characters
+                      </span>
+                      <span
+                        className={`flex items-center gap-1 ${
+                          checkPasswordStrength(newPassword).criteria.hasUppercase &&
+                          checkPasswordStrength(newPassword).criteria.hasLowercase
+                            ? 'text-emerald-400 font-semibold'
+                            : 'opacity-50'
+                        }`}
+                      >
+                        {checkPasswordStrength(newPassword).criteria.hasUppercase &&
+                        checkPasswordStrength(newPassword).criteria.hasLowercase
+                          ? '✓'
+                          : '○'}{' '}
+                        Upper &amp; lower case
+                      </span>
+                      <span
+                        className={`flex items-center gap-1 ${
+                          checkPasswordStrength(newPassword).criteria.hasNumber
+                            ? 'text-emerald-400 font-semibold'
+                            : 'opacity-50'
+                        }`}
+                      >
+                        {checkPasswordStrength(newPassword).criteria.hasNumber ? '✓' : '○'} Number / figure
+                      </span>
+                      <span
+                        className={`flex items-center gap-1 ${
+                          checkPasswordStrength(newPassword).criteria.hasSpecial
+                            ? 'text-emerald-400 font-semibold'
+                            : 'opacity-50'
+                        }`}
+                      >
+                        {checkPasswordStrength(newPassword).criteria.hasSpecial ? '✓' : '○'} Special char (!@#$)
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -495,14 +628,31 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                 <p className="opacity-70 text-[11px] leading-relaxed">
                   Includes your full profile metadata, all published and draft dispatches, C2PA media forensics credentials, bookmarks, and account timestamps.
                 </p>
-                <button
-                  type="button"
-                  onClick={handleDownloadMyData}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-sky-500/15 text-sky-400 border border-sky-400/30 hover:bg-sky-500/25 transition-colors inline-flex items-center gap-2"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Export JSON Archive</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleDownloadMyData}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-sky-500/15 text-sky-400 border border-sky-400/30 hover:bg-sky-500/25 transition-colors inline-flex items-center gap-2"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export Plain JSON Archive</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadEncryptedData}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-400/30 hover:bg-emerald-500/25 transition-colors inline-flex items-center gap-2"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Export AES-256 Encrypted Vault (.enc.json)</span>
+                  </button>
+                </div>
+                {encryptedExportStatus && (
+                  <div className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1.5 pt-1">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{encryptedExportStatus}</span>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3 pt-2 border-t border-slate-500/15">

