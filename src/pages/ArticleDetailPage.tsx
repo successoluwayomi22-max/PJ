@@ -38,6 +38,7 @@ import {
 } from '../types';
 import { computePostRankScore } from '../mockData';
 import { formatRelativeTime, UI_STRINGS } from '../i18n';
+import { hasPermission } from '../utils/rbac';
 import { Panorama360Viewer } from '../components/Panorama360Viewer';
 
 interface ArticleDetailPageProps {
@@ -280,16 +281,8 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
       </div>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        {/* Top Back Navigation */}
-        <div className="flex items-center justify-between pb-6 mb-8 border-b border-slate-500/15">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-2 text-xs font-medium opacity-70 hover:opacity-100 transition-opacity"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to Stream
-          </button>
-
+        {/* Story Forensics & Category Metadata Bar */}
+        <div className="flex items-center justify-end pb-4 mb-6 border-b border-slate-500/15">
           <div className="flex items-center gap-3 text-[11px] font-mono uppercase tracking-wider opacity-70">
             <span>{strings.categories[post.category] || post.category}</span>
             <span>•</span>
@@ -449,7 +442,21 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
                   <div className="relative">
                     <button
                       type="button"
-                      onClick={() => setShowShareMenu((v) => !v)}
+                      onClick={async () => {
+                        if (navigator.share) {
+                          try {
+                            await navigator.share({
+                              title: post.headline,
+                              text: post.bodyText.slice(0, 100),
+                              url: window.location.href,
+                            });
+                            return;
+                          } catch {
+                            // fallback to popover menu
+                          }
+                        }
+                        setShowShareMenu((v) => !v);
+                      }}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-slate-500/25 hover:bg-slate-500/10"
                     >
                       {copied ? (
@@ -751,8 +758,11 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
                   const cLiked = likedCommentIds.includes(c.id);
                   const childReplies = postComments.filter((r) => r.parentCommentId === c.id);
                   const isOwnComment = c.authorId === currentUser.id;
-                  const isAdmin = currentUser.role === 'admin';
-                  const canDelete = isOwnComment || isAdmin;
+                  const canModerate = hasPermission(currentUser, 'comments.moderate');
+                  const canDeleteOwn = hasPermission(currentUser, 'comments.delete_own', {
+                    resourceAuthorId: c.authorId,
+                  });
+                  const canDelete = (isOwnComment && canDeleteOwn) || canModerate;
 
                   return (
                     <div
@@ -868,7 +878,10 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
                             const rAuthor = users.find((u) => u.id === r.authorId);
                             const rLiked = likedCommentIds.includes(r.id);
                             const isOwnReply = r.authorId === currentUser.id;
-                            const canDeleteReply = isOwnReply || isAdmin;
+                            const canDeleteReplyOwn = hasPermission(currentUser, 'comments.delete_own', {
+                              resourceAuthorId: r.authorId,
+                            });
+                            const canDeleteReply = (isOwnReply && canDeleteReplyOwn) || canModerate;
                             return (
                               <div key={r.id} className="space-y-1 text-xs">
                                 <div className="flex items-center justify-between">
@@ -1074,6 +1087,18 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
               )}
             </div>
           </aside>
+        </div>
+
+        {/* Bottom Back Navigation Bar */}
+        <div className="pt-10 pb-6 flex items-center justify-start border-t border-slate-500/15 mt-10">
+          <button
+            type="button"
+            onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors shadow-sm"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back</span>
+          </button>
         </div>
       </div>
     </div>

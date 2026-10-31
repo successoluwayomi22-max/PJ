@@ -84,17 +84,6 @@ export const Explore3DPage: React.FC<Explore3DPageProps> = ({
 
   return (
     <div className="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 space-y-6">
-      <div className="flex items-center justify-between pb-1">
-        <button
-          type="button"
-          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back</span>
-        </button>
-      </div>
-
       {/* 1. IMMERSIVE FULL-BLEED EDITORIAL SPOTLIGHT HERO */}
       {activeHero && (
         <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-slate-950 text-white min-h-[440px] flex flex-col justify-end shadow-xl group">
@@ -422,9 +411,21 @@ export const Explore3DPage: React.FC<Explore3DPageProps> = ({
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={() =>
-                            setOpenSharePostId(openSharePostId === post.id ? null : post.id)
-                          }
+                          onClick={async () => {
+                            if (navigator.share) {
+                              try {
+                                await navigator.share({
+                                  title: post.headline,
+                                  text: post.bodyText.slice(0, 100),
+                                  url: shareUrl,
+                                });
+                                return;
+                              } catch {
+                                // fallback to menu
+                              }
+                            }
+                            setOpenSharePostId(openSharePostId === post.id ? null : post.id);
+                          }}
                           className={`p-1.5 rounded-full transition-colors ${
                             openSharePostId === post.id || copiedPostId === post.id
                               ? 'text-sky-400 bg-sky-500/10'
@@ -711,6 +712,18 @@ export const Explore3DPage: React.FC<Explore3DPageProps> = ({
             </div>
           </div>
         </aside>
+      </div>
+
+      {/* Bottom Back Navigation Bar */}
+      <div className="pt-8 pb-4 flex items-center justify-start border-t border-slate-500/15">
+        <button
+          type="button"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors shadow-sm"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back</span>
+        </button>
       </div>
     </div>
   );

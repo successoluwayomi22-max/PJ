@@ -83,17 +83,6 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 pb-24 space-y-6">
-      <div className="flex items-center justify-between pb-1 border-b border-slate-500/15">
-        <button
-          type="button"
-          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back</span>
-        </button>
-      </div>
-
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-editorial text-2xl sm:text-3xl font-bold tracking-tight">
@@ -190,6 +179,18 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* Bottom Back Navigation Bar */}
+      <div className="pt-6 pb-2 flex items-center justify-start border-t border-slate-500/15">
+        <button
+          type="button"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors shadow-sm"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back</span>
+        </button>
+      </div>
     </div>
   );
 };

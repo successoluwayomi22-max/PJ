@@ -20,6 +20,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { CommunityNote, NewsPost, User } from '../types';
+import { getRoleDefinition } from '../utils/rbac';
 
 interface UserDashboardViewProps {
   currentUser: User;
@@ -145,8 +146,8 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <h1 className="font-editorial text-2xl font-semibold">{currentUser.displayName}</h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase bg-slate-500/15">
-                {currentUser.verificationTier.replace('_', ' ')}
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase bg-slate-500/15 font-semibold text-sky-400">
+                {getRoleDefinition(currentUser.role).label}
               </span>
             </div>
             <div className="flex items-center gap-3 mt-1.5">

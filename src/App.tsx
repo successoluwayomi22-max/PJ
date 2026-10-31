@@ -50,9 +50,15 @@ import {
   MediaItem,
   NewsPost,
   PostCategory,
+  RoleDefinition,
   SiteSettings,
   User,
 } from './types';
+import {
+  hasPermission,
+  canTransitionWorkflow,
+  SYSTEM_ROLES,
+} from './utils/rbac';
 import {
   computePostRankScore,
   INITIAL_SITE_SETTINGS,
@@ -148,6 +154,16 @@ const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   },
 ];
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [pathname]);
+
+  return null;
+}
+
 export function App() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -195,6 +211,15 @@ export function App() {
       return saved ? JSON.parse(saved) : INITIAL_COMMUNITY_NOTES;
     } catch {
       return INITIAL_COMMUNITY_NOTES;
+    }
+  });
+
+  const [customRoles, setCustomRoles] = useState<RoleDefinition[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_custom_roles`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
     }
   });
 
@@ -401,6 +426,10 @@ export function App() {
           `${STORAGE_KEY}_read_notifications`,
           JSON.stringify(readNotificationIds)
         );
+        localStorage.setItem(
+          `${STORAGE_KEY}_custom_roles`,
+          JSON.stringify(customRoles)
+        );
       } catch {
         // ignore storage quota errors
       }
@@ -411,6 +440,7 @@ export function App() {
     currentUserId,
     settings,
     users,
+    customRoles,
     posts,
     comments,
     notes,
@@ -479,6 +509,16 @@ export function App() {
   }, []);
 
   const isDark = settings.theme.mode === 'dark';
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    } else {
+      document.documentElement.classList.add('light');
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDark]);
   const bgCanvas = isDark ? settings.theme.darkBgCanvas : settings.theme.lightBgCanvas;
   const cardBgColor = isDark ? settings.theme.darkBgCard : settings.theme.lightBgCard;
   const primaryColor = settings.theme.primaryColor;
@@ -519,15 +559,77 @@ export function App() {
     setSettings(next);
   };
 
+  const handleCreateCustomRole = (role: RoleDefinition) => {
+    setCustomRoles((prev) => [role, ...prev]);
+    const auditEntry: AuditLogEntry = {
+      id: `audit-${Date.now()}`,
+      adminId: currentUser.id,
+      actionType: 'ROLE_CREATED',
+      description: `Created custom role [${role.label}] with ${role.permissions.length} granular permissions`,
+      timestamp: new Date().toISOString(),
+      targetResourceId: role.id,
+      resourceType: 'ROLE',
+      outcome: 'SUCCESS',
+    };
+    setAuditLogs((prev) => [auditEntry, ...prev]);
+  };
+
+  const handleDeleteCustomRole = (roleId: string) => {
+    setCustomRoles((prev) => prev.filter((r) => r.id !== roleId));
+    const auditEntry: AuditLogEntry = {
+      id: `audit-${Date.now()}`,
+      adminId: currentUser.id,
+      actionType: 'ROLE_DELETED',
+      description: `Deleted custom role [${roleId}] from system`,
+      timestamp: new Date().toISOString(),
+      targetResourceId: roleId,
+      resourceType: 'ROLE',
+      outcome: 'SUCCESS',
+    };
+    setAuditLogs((prev) => [auditEntry, ...prev]);
+  };
+
   const handleUpdatePost = (postId: string, updates: Partial<NewsPost>, reason: string) => {
     const target = posts.find((p) => p.id === postId);
     if (!target) return;
+
+    // 1. If transitioning workflow status, enforce workflow engine rules
+    if (updates.status && updates.status !== target.status) {
+      const transitionResult = canTransitionWorkflow(
+        currentUser,
+        target,
+        updates.status,
+        customRoles
+      );
+      if (!transitionResult.allowed) {
+        alert(transitionResult.reason || 'Workflow transition denied.');
+        return;
+      }
+    } else {
+      // 2. Otherwise enforce object-level article update permissions
+      const isAuthorized =
+        hasPermission(
+          currentUser,
+          'articles.update_own',
+          { resourceAuthorId: target.authorId },
+          customRoles
+        ) || hasPermission(currentUser, 'articles.update_any', undefined, customRoles);
+
+      if (!isAuthorized) {
+        alert('Forbidden: You do not have permission to update this dispatch.');
+        return;
+      }
+    }
+
     const entry: AuditLogEntry = {
       id: `audit-${Date.now()}`,
       adminId: currentUser.id,
-      actionType: 'POST_INLINE_EDIT',
+      actionType: updates.status ? 'WORKFLOW_TRANSITION' : 'POST_INLINE_EDIT',
       description: reason,
       timestamp: new Date().toISOString(),
+      targetResourceId: postId,
+      resourceType: 'ARTICLE',
+      outcome: 'SUCCESS',
       previousPostState: target,
     };
     setAuditLogs((prev) => [entry, ...prev]);
@@ -535,6 +637,22 @@ export function App() {
   };
 
   const handleDeletePost = (postId: string) => {
+    const target = posts.find((p) => p.id === postId);
+    if (!target) return;
+
+    const isAuthorized =
+      hasPermission(
+        currentUser,
+        'articles.delete_own',
+        { resourceAuthorId: target.authorId },
+        customRoles
+      ) || hasPermission(currentUser, 'articles.delete_any', undefined, customRoles);
+
+    if (!isAuthorized) {
+      alert('Forbidden: You do not have permission to delete this dispatch.');
+      return;
+    }
+
     setPosts((prev) => prev.filter((p) => p.id !== postId));
   };
 
@@ -680,6 +798,23 @@ export function App() {
   };
 
   const handleDeleteComment = (commentId: string, postId: string) => {
+    const targetComment = comments.find((c) => c.id === commentId);
+    if (!targetComment) return;
+
+    // Server-side Object-Level Authorization Check
+    const isAuthorized =
+      hasPermission(
+        currentUser,
+        'comments.delete_own',
+        { resourceAuthorId: targetComment.authorId },
+        customRoles
+      ) || hasPermission(currentUser, 'comments.moderate', undefined, customRoles);
+
+    if (!isAuthorized) {
+      alert('Forbidden: You do not have permission to delete this comment.');
+      return;
+    }
+
     setComments((prev) => {
       const removedCount = prev.filter(
         (c) => c.id === commentId || c.parentCommentId === commentId
@@ -1065,6 +1200,7 @@ export function App() {
         settings.theme.fontStyle === 'tech' ? 'font-mono' : 'font-sans'
       }`}
     >
+      <ScrollToTop />
       {/* =====================================================================
           CLEAN, MATURE STICKY HEADER
       ===================================================================== */}
@@ -1291,14 +1427,31 @@ export function App() {
                       <div className="min-w-0 flex-1">
                         <div className="font-semibold text-xs truncate flex items-center gap-1.5">
                           <span className="truncate">{currentUser.displayName}</span>
-                          {currentUser.role === 'admin' ? (
+                          {currentUser.role === 'super_admin' ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500/15 text-indigo-400 shrink-0">
+                              SUPER ADMIN
+                            </span>
+                          ) : currentUser.role === 'admin' ? (
                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-400 shrink-0">
                               ADMIN
                             </span>
-                          ) : currentUser.verificationTier === 'journalist' ||
+                          ) : currentUser.role === 'managing_editor' ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-500/15 text-purple-400 shrink-0">
+                              MANAGING ED
+                            </span>
+                          ) : currentUser.role === 'editor' ||
                             currentUser.role === 'moderator' ? (
                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-500/15 text-sky-400 shrink-0">
+                              EDITOR
+                            </span>
+                          ) : currentUser.verificationTier === 'journalist' ||
+                            currentUser.role === 'author' ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 shrink-0">
                               JOURNALIST
+                            </span>
+                          ) : currentUser.role === 'contributor' ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-cyan-500/15 text-cyan-400 shrink-0">
+                              CONTRIBUTOR
                             </span>
                           ) : (
                             <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-500/15 text-slate-400 shrink-0">
@@ -1316,21 +1469,31 @@ export function App() {
                     <div className="py-1.5 space-y-0.5">
                       {/* Role-Specific Dashboard Access */}
                       <Link
-                        to={currentUser.role === 'admin' ? '/admin' : '/studio'}
+                        to={
+                          currentUser.role === 'super_admin' || currentUser.role === 'admin'
+                            ? '/admin'
+                            : '/studio'
+                        }
                         onClick={() => setUserMenuOpen(false)}
                         className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left hover:bg-slate-500/10 font-semibold"
                         style={{ color: primaryColor }}
                       >
-                        {currentUser.role === 'admin' ? (
+                        {currentUser.role === 'super_admin' || currentUser.role === 'admin' ? (
                           <Sliders className="w-4 h-4" />
                         ) : (
                           <LayoutDashboard className="w-4 h-4" />
                         )}
                         <span>
-                          {currentUser.role === 'admin'
+                          {currentUser.role === 'super_admin'
+                            ? 'Super Admin OS'
+                            : currentUser.role === 'admin'
                             ? 'Executive Admin OS'
+                            : currentUser.role === 'managing_editor'
+                            ? 'Managing Editor Studio'
+                            : currentUser.role === 'editor'
+                            ? 'Editorial Desk'
                             : currentUser.verificationTier === 'journalist' ||
-                              currentUser.role === 'moderator'
+                              currentUser.role === 'author'
                             ? 'Creator Studio'
                             : 'Reader Dashboard'}
                         </span>
@@ -2147,7 +2310,7 @@ export function App() {
         <Route
           path="/admin"
           element={
-            currentUser.role === 'admin' ? (
+            currentUser.role === 'admin' || currentUser.role === 'super_admin' ? (
               <AdminDashboardView
                 settings={settings}
                 posts={posts}
@@ -2155,11 +2318,14 @@ export function App() {
                 currentUser={currentUser}
                 notes={notes}
                 auditLogs={auditLogs}
+                customRoles={customRoles}
                 onUpdateSettings={handleUpdateSettings}
                 onUpdatePost={handleUpdatePost}
                 onDeletePost={handleDeletePost}
                 onUpdateUser={handleUpdateUser}
                 onUndoAuditLog={handleUndoAuditLog}
+                onCreateCustomRole={handleCreateCustomRole}
+                onDeleteCustomRole={handleDeleteCustomRole}
                 onSignOut={handleSignOut}
               />
             ) : (
@@ -2173,7 +2339,11 @@ export function App() {
           path="/dashboard"
           element={
             <Navigate
-              to={currentUser.role === 'admin' ? '/admin' : '/studio'}
+              to={
+                currentUser.role === 'admin' || currentUser.role === 'super_admin'
+                  ? '/admin'
+                  : '/studio'
+              }
               replace
             />
           }

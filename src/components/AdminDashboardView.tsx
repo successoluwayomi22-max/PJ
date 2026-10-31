@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity,
+  AlertTriangle,
   ArrowLeft,
   ArrowUpRight,
   Camera,
@@ -402,6 +403,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <nav className="space-y-1">
               {[
                 { id: 'overview', label: 'Overview & Moderation', icon: Layers },
+                { id: 'rbac_roles', label: `RBAC & Permissions (${allRoles.length})`, icon: KeyRound },
                 { id: 'users', label: `Correspondents (${users.length})`, icon: Users },
                 { id: 'branding', label: 'Brand & Color Studio', icon: Palette },
                 { id: 'cyber_defense', label: 'Firewall & IDS / IPS (Live)', icon: ShieldAlert },
@@ -646,6 +648,529 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              SECTION 1.5: ENTERPRISE RBAC & PERMISSION ENGINE STUDIO
+          ================================================================= */}
+          {activeSection === 'rbac_roles' && (
+            <div className="space-y-6">
+              {/* RBAC Overview Metrics Banner */}
+              <div
+                style={{ backgroundColor: cardBgColor }}
+                className="p-6 rounded-2xl border border-slate-500/15 space-y-4"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Enterprise Security Engine • Least Privilege Active</span>
+                    </div>
+                    <h3 className="text-lg font-semibold mt-1">
+                      Role-Based Access Control (RBAC) &amp; Permission Governance
+                    </h3>
+                    <p className="text-xs opacity-65 mt-0.5">
+                      Granular 43-node permission matrix, strict separation of duties, object-level ownership checks, and privilege escalation defense.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowRoleCreator((v) => !v)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-slate-950 transition-opacity hover:opacity-90 self-start sm:self-auto shrink-0 shadow-sm"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{showRoleCreator ? 'Close Role Creator' : 'Create Custom Role'}</span>
+                  </button>
+                </div>
+
+                {/* Governance Telemetry Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs">
+                  <div className="p-3.5 rounded-xl border border-slate-500/15 bg-slate-500/[0.03]">
+                    <div className="text-[10px] font-mono uppercase opacity-60">System Roles</div>
+                    <div className="text-xl font-bold font-mono mt-1 text-sky-400">{SYSTEM_ROLES.length}</div>
+                    <div className="text-[10px] opacity-60">Protected Core Definitions</div>
+                  </div>
+                  <div className="p-3.5 rounded-xl border border-slate-500/15 bg-slate-500/[0.03]">
+                    <div className="text-[10px] font-mono uppercase opacity-60">Custom Roles</div>
+                    <div className="text-xl font-bold font-mono mt-1 text-emerald-400">{customRoles.length}</div>
+                    <div className="text-[10px] opacity-60">Dynamic Tenant Roles</div>
+                  </div>
+                  <div className="p-3.5 rounded-xl border border-slate-500/15 bg-slate-500/[0.03]">
+                    <div className="text-[10px] font-mono uppercase opacity-60">Granular Perms</div>
+                    <div className="text-xl font-bold font-mono mt-1 text-amber-400">{ALL_PERMISSIONS.length}</div>
+                    <div className="text-[10px] opacity-60">Enforced Across L7 &amp; DB</div>
+                  </div>
+                  <div className="p-3.5 rounded-xl border border-slate-500/15 bg-slate-500/[0.03]">
+                    <div className="text-[10px] font-mono uppercase opacity-60">Super Admin Guard</div>
+                    <div className="text-xl font-bold font-mono mt-1 text-indigo-400">ENFORCED</div>
+                    <div className="text-[10px] opacity-60">Last Admin Immutable</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Role Creation Form Modal/Card */}
+              {showRoleCreator && (
+                <div
+                  style={{ backgroundColor: cardBgColor }}
+                  className="p-6 rounded-2xl border border-sky-500/30 shadow-2xl space-y-4 animate-in fade-in duration-150 text-xs"
+                >
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-500/15">
+                    <div className="flex items-center gap-2">
+                      <KeyRound className="w-4 h-4 text-sky-400" />
+                      <h4 className="font-semibold text-sm">Define Custom Role with Granular Permissions</h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowRoleCreator(false)}
+                      className="opacity-60 hover:opacity-100"
+                    >
+                      <XCircle className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block font-mono uppercase text-[10px] opacity-60 mb-1">
+                        Role Identifier (slug)
+                      </label>
+                      <input
+                        type="text"
+                        value={newRoleName}
+                        onChange={(e) => setNewRoleName(e.target.value)}
+                        placeholder="e.g. senior_fact_checker"
+                        className="w-full px-3.5 py-2 rounded-xl bg-slate-500/[0.07] border border-slate-500/20 font-mono text-xs focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-mono uppercase text-[10px] opacity-60 mb-1">
+                        Display Label
+                      </label>
+                      <input
+                        type="text"
+                        value={newRoleLabel}
+                        onChange={(e) => setNewRoleLabel(e.target.value)}
+                        placeholder="e.g. Senior Fact Checker"
+                        className="w-full px-3.5 py-2 rounded-xl bg-slate-500/[0.07] border border-slate-500/20 text-xs focus:outline-none font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-mono uppercase text-[10px] opacity-60 mb-1">
+                        Hierarchy Priority ({newRolePriority})
+                      </label>
+                      <input
+                        type="range"
+                        min={10}
+                        max={75}
+                        value={newRolePriority}
+                        onChange={(e) => setNewRolePriority(Number(e.target.value))}
+                        className="w-full accent-sky-400 mt-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-mono uppercase text-[10px] opacity-60 mb-1">
+                      Role Description &amp; Scope
+                    </label>
+                    <input
+                      type="text"
+                      value={newRoleDescription}
+                      onChange={(e) => setNewRoleDescription(e.target.value)}
+                      placeholder="Specify the operational responsibilities and editorial boundary of this role..."
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-500/[0.07] border border-slate-500/20 text-xs focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Permission Selection Checklist */}
+                  <div className="space-y-2 pt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono uppercase text-[10px] opacity-60">
+                        Assign Granular Permissions ({newRolePermissions.length} selected)
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNewRolePermissions([...ALL_PERMISSIONS])}
+                          className="text-[11px] font-medium text-sky-400 hover:underline"
+                        >
+                          Select All
+                        </button>
+                        <span>•</span>
+                        <button
+                          type="button"
+                          onClick={() => setNewRolePermissions([])}
+                          className="text-[11px] font-medium opacity-60 hover:opacity-100 hover:underline"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto p-3 rounded-xl border border-slate-500/15 bg-slate-500/[0.04] grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                      {ALL_PERMISSIONS.map((perm) => {
+                        const isSelected = newRolePermissions.includes(perm);
+                        return (
+                          <label
+                            key={perm}
+                            className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors text-[11px] font-mono ${
+                              isSelected
+                                ? 'bg-sky-500/15 text-sky-300 font-semibold border border-sky-500/30'
+                                : 'opacity-70 hover:opacity-100 hover:bg-slate-500/10'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setNewRolePermissions((prev) => [...prev, perm]);
+                                } else {
+                                  setNewRolePermissions((prev) => prev.filter((p) => p !== perm));
+                                }
+                              }}
+                              className="rounded border-slate-500/30 text-sky-500 accent-sky-400"
+                            />
+                            <span className="truncate">{perm}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {roleCreationFeedback && (
+                    <div
+                      className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 ${
+                        roleCreationFeedback.isError
+                          ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                          : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                      }`}
+                    >
+                      {roleCreationFeedback.isError ? (
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                      ) : (
+                        <Check className="w-4 h-4 shrink-0" />
+                      )}
+                      <span>{roleCreationFeedback.message}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowRoleCreator(false)}
+                      className="px-4 py-2 rounded-xl border border-slate-500/20 hover:bg-slate-500/10 font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!newRoleName.trim() || !newRoleLabel.trim()) {
+                          setRoleCreationFeedback({
+                            message: 'Role Identifier and Display Label are required.',
+                            isError: true,
+                          });
+                          return;
+                        }
+                        const newRoleDef: RoleDefinition = {
+                          id: newRoleName.trim().toLowerCase().replace(/\s+/g, '_'),
+                          name: newRoleName.trim().toLowerCase().replace(/\s+/g, '_'),
+                          label: newRoleLabel.trim(),
+                          description: newRoleDescription.trim() || 'Custom defined role.',
+                          isSystem: false,
+                          priority: newRolePriority,
+                          permissions: newRolePermissions,
+                          createdAt: new Date().toISOString(),
+                          updatedAt: new Date().toISOString(),
+                        };
+
+                        const validation = validateRoleCreation(
+                          activeAdmin,
+                          newRoleDef,
+                          allRoles
+                        );
+                        if (!validation.allowed) {
+                          setRoleCreationFeedback({
+                            message: validation.reason || 'Role creation forbidden.',
+                            isError: true,
+                          });
+                          return;
+                        }
+
+                        if (onCreateCustomRole) {
+                          onCreateCustomRole(newRoleDef);
+                        }
+                        setRoleCreationFeedback({
+                          message: `Role [${newRoleDef.label}] successfully created and registered into security engine.`,
+                          isError: false,
+                        });
+                        setNewRoleName('');
+                        setNewRoleLabel('');
+                        setNewRoleDescription('');
+                        setTimeout(() => setShowRoleCreator(false), 1200);
+                      }}
+                      className="px-5 py-2 rounded-xl font-semibold text-slate-950 shadow-sm"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      Save &amp; Deploy Role
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Role Inspector & Permissions Matrix */}
+              <div
+                style={{ backgroundColor: cardBgColor }}
+                className="p-6 rounded-2xl border border-slate-500/15 space-y-5 text-xs"
+              >
+                <div>
+                  <h4 className="font-semibold text-sm">Role Catalog &amp; Granular Permission Inspector</h4>
+                  <p className="text-xs opacity-65 mt-0.5">
+                    Inspect explicit grants across the 8 standard roles and dynamic custom roles.
+                  </p>
+                </div>
+
+                {/* Role Filter Pills */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {allRoles.map((role) => {
+                    const isSelected = selectedRoleId === role.id;
+                    return (
+                      <button
+                        key={role.id}
+                        type="button"
+                        onClick={() => setSelectedRoleId(role.id)}
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-sky-500 text-slate-950 shadow-sm'
+                            : 'bg-slate-500/[0.08] border border-slate-500/20 opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <span>{role.label}</span>
+                        <span className="text-[10px] font-mono opacity-80">
+                          (P:{role.priority})
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Selected Role Detail Box */}
+                {(() => {
+                  const currentInspected = getRoleDefinition(selectedRoleId, customRoles);
+                  const isSystem = currentInspected.isSystem;
+                  return (
+                    <div className="p-4 rounded-xl border border-slate-500/20 bg-slate-500/[0.04] space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-500/15">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h5 className="text-sm font-bold">{currentInspected.label}</h5>
+                            <span className="font-mono text-[11px] opacity-60">
+                              @{currentInspected.name}
+                            </span>
+                            {isSystem ? (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                PROTECTED SYSTEM ROLE
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                CUSTOM ROLE
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs opacity-75 mt-1">{currentInspected.description}</p>
+                        </div>
+
+                        {!isSystem && onDeleteCustomRole && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const validation = validateRoleDeletion(
+                                activeAdmin,
+                                currentInspected.id,
+                                users,
+                                allRoles
+                              );
+                              if (!validation.allowed) {
+                                alert(validation.reason);
+                                return;
+                              }
+                              if (
+                                confirm(
+                                  `Are you sure you want to permanently delete custom role "${currentInspected.label}"?`
+                                )
+                              ) {
+                                onDeleteCustomRole(currentInspected.id);
+                                setSelectedRoleId('super_admin');
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 font-semibold self-start sm:self-auto"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete Custom Role</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Explicit Permissions Coverage for Inspected Role */}
+                      <div className="space-y-2">
+                        <div className="text-[11px] font-mono uppercase tracking-wider opacity-60 flex items-center justify-between">
+                          <span>
+                            Granted Permissions ({currentInspected.permissions.length} /{' '}
+                            {ALL_PERMISSIONS.length})
+                          </span>
+                          <span>
+                            {Math.round(
+                              (currentInspected.permissions.length / ALL_PERMISSIONS.length) * 100
+                            )}
+                            % Platform Authority
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
+                          {ALL_PERMISSIONS.map((perm) => {
+                            const isGranted = currentInspected.permissions.includes(perm);
+                            return (
+                              <div
+                                key={perm}
+                                className={`flex items-center justify-between p-2 rounded-lg text-[11px] font-mono border ${
+                                  isGranted
+                                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 font-medium'
+                                    : 'border-slate-500/10 opacity-30 text-slate-400'
+                                }`}
+                              >
+                                <span className="truncate">{perm}</span>
+                                {isGranted ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0 ml-1" />
+                                ) : (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500/40 shrink-0 ml-1" />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* User Role Assignment Console with Privilege Escalation Safeguards */}
+              <div
+                style={{ backgroundColor: cardBgColor }}
+                className="p-6 rounded-2xl border border-slate-500/15 space-y-4 text-xs"
+              >
+                <div>
+                  <h4 className="font-semibold text-sm">Correspondent &amp; User Role Assignment Console</h4>
+                  <p className="text-xs opacity-65 mt-0.5">
+                    Assign roles with automated server-side verification: blocks privilege escalation and prevents removal of the last Super Administrator.
+                  </p>
+                </div>
+
+                {roleAssignFeedback && (
+                  <div
+                    className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 ${
+                      roleAssignFeedback.isError
+                        ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                        : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                    }`}
+                  >
+                    {roleAssignFeedback.isError ? (
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                    ) : (
+                      <Check className="w-4 h-4 shrink-0" />
+                    )}
+                    <span>{roleAssignFeedback.message}</span>
+                  </div>
+                )}
+
+                <div className="divide-y divide-slate-500/15">
+                  {users.map((u) => {
+                    const userRoleDef = getRoleDefinition(u.role, customRoles);
+                    return (
+                      <div
+                        key={u.id}
+                        className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img
+                            src={u.avatarUrl}
+                            alt={u.displayName}
+                            className="w-9 h-9 rounded-full object-cover shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <div className="font-semibold truncate flex items-center gap-2">
+                              <span>{u.displayName}</span>
+                              <span className="font-mono text-[10px] opacity-60">@{u.username}</span>
+                            </div>
+                            <div className="text-[11px] opacity-65 flex items-center gap-2 mt-0.5">
+                              <span>Tier: {u.verificationTier}</span>
+                              <span>•</span>
+                              <span>Trust: {Math.round(u.trustScore * 100)}%</span>
+                              <span>•</span>
+                              <span
+                                className={`font-semibold ${
+                                  u.status === 'active' ? 'text-emerald-400' : 'text-rose-400'
+                                }`}
+                              >
+                                {u.status.toUpperCase()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                          <span className="text-[10px] font-mono uppercase opacity-60">Role:</span>
+                          <select
+                            value={u.role}
+                            onChange={(e) => {
+                              const newRoleId = e.target.value;
+                              const validation = validateRoleAssignment(
+                                activeAdmin,
+                                u,
+                                newRoleId,
+                                users,
+                                allRoles
+                              );
+
+                              if (!validation.allowed) {
+                                setRoleAssignFeedback({
+                                  userId: u.id,
+                                  message: validation.reason || 'Assignment forbidden.',
+                                  isError: true,
+                                });
+                                return;
+                              }
+
+                              setRoleAssignFeedback({
+                                userId: u.id,
+                                message: `Successfully assigned @${u.username} to [${
+                                  getRoleDefinition(newRoleId, allRoles).label
+                                }].`,
+                                isError: false,
+                              });
+                              onUpdateUser(
+                                u.id,
+                                { role: newRoleId },
+                                `Assigned role [${newRoleId}] to @${u.username}`
+                              );
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-slate-500/[0.08] border border-slate-500/25 font-semibold text-xs cursor-pointer focus:outline-none"
+                          >
+                            {allRoles.map((r) => (
+                              <option key={r.id} value={r.id} className="bg-slate-900 text-white">
+                                {r.label} (Priority {r.priority})
+                              </option>
+                            ))}
+                          </select>
                         </div>
                       </div>
                     );

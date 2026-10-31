@@ -235,15 +235,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   return (
     <div className="min-h-[calc(100vh-64px)] grid grid-cols-1 lg:grid-cols-12">
       {/* LEFT AUTHENTICATION FORM COLUMN */}
-      <div className="lg:col-span-6 flex flex-col justify-between p-6 sm:p-12 lg:p-16">
-        <div className="flex items-center justify-between">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 text-xs font-medium opacity-65 hover:opacity-100 transition-opacity"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to News Feed
-          </Link>
-
+      <div className="lg:col-span-6 flex flex-col justify-start space-y-6 p-6 sm:p-12 lg:p-16">
+        <div className="flex items-center justify-end">
           <div className="flex items-center gap-1.5 p-1 rounded-full border border-slate-500/15 bg-slate-500/[0.04] text-xs font-medium">
             <Link
               to="/login"
@@ -294,8 +287,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   </label>
                   <div className="relative group">
                     <Mail
-                      className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-                        isDark ? 'text-slate-400 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
+                      className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors ${
+                        isDark ? 'text-slate-200 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
                       }`}
                     />
                     <input
@@ -309,7 +302,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       placeholder="Enter your email or @username"
                       className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
                         isDark
-                          ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                          ? 'bg-slate-900 text-white border border-slate-700 focus:border-sky-400 placeholder:text-slate-400'
                           : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
                       }`}
                     />
@@ -322,8 +315,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   </div>
                   <div className="relative group">
                     <Lock
-                      className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-                        isDark ? 'text-slate-400 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
+                      className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors ${
+                        isDark ? 'text-slate-200 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
                       }`}
                     />
                     <input
@@ -337,15 +330,15 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       placeholder="Enter your password"
                       className={`w-full pl-10 pr-10 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
                         isDark
-                          ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                          ? 'bg-slate-900 text-white border border-slate-700 focus:border-sky-400 placeholder:text-slate-400'
                           : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
                       }`}
                     />
                     <button
                       type="button"
                       onClick={() => setShowLoginPassword((prev) => !prev)}
-                      className={`absolute right-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-                        isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                      className={`absolute right-3.5 top-1/2 -translate-y-1/2 z-10 p-1 rounded-md transition-colors ${
+                        isDark ? 'text-slate-200 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5'
                       }`}
                       title={showLoginPassword ? 'Hide password' : 'Show password'}
                     >
@@ -509,15 +502,15 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       placeholder="At least 8 characters (mixed case, number, special)"
                       className={`w-full pl-3 pr-9 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
                         isDark
-                          ? 'bg-slate-900/90 text-white border border-slate-700/80 focus:border-sky-400 placeholder:text-slate-500'
+                          ? 'bg-slate-900 text-white border border-slate-700 focus:border-sky-400 placeholder:text-slate-400'
                           : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
                       }`}
                     />
                     <button
                       type="button"
                       onClick={() => setShowRegPassword((prev) => !prev)}
-                      className={`absolute right-3 top-1/2 -translate-y-1/2 transition-colors ${
-                        isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'
+                      className={`absolute right-3 top-1/2 -translate-y-1/2 z-10 p-1 rounded-md transition-colors ${
+                        isDark ? 'text-slate-200 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5'
                       }`}
                     >
                       {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}

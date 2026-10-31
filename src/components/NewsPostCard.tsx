@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { CommentItem, CommunityNote, LanguageCode, NewsPost, User } from '../types';
 import { formatCompactNumber, formatRelativeTime } from '../i18n';
+import { hasPermission } from '../utils/rbac';
 
 interface NewsPostCardProps {
   post: NewsPost;
@@ -122,7 +123,12 @@ export const NewsPostCard: React.FC<NewsPostCardProps> = ({
     });
 
   const postNotes = notes.filter((n) => n.postId === post.id);
-  const canModify = currentUser.id === post.authorId || currentUser.role === 'admin';
+  const canModify =
+    hasPermission(
+      currentUser,
+      'articles.update_own',
+      { resourceAuthorId: post.authorId }
+    ) || hasPermission(currentUser, 'articles.update_any');
 
   const triggerToast = (msg: string) => {
     setActionToast(msg);
@@ -496,7 +502,7 @@ export const NewsPostCard: React.FC<NewsPostCardProps> = ({
                     >
                       <Edit3 className="w-3.5 h-3.5" /> Edit Story
                     </button>
-                    {currentUser.role === 'admin' && (
+                    {hasPermission(currentUser, 'articles.update_any') && (
                       <button
                         type="button"
                         onClick={() => {
@@ -876,7 +882,20 @@ export const NewsPostCard: React.FC<NewsPostCardProps> = ({
             <div className="relative">
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
+                  const shareUrl = `${window.location.origin}/article/${post.id}`;
+                  if (navigator.share) {
+                    try {
+                      await navigator.share({
+                        title: post.headline,
+                        text: post.bodyText.slice(0, 100),
+                        url: shareUrl,
+                      });
+                      return;
+                    } catch {
+                      // fallback to popover menu
+                    }
+                  }
                   setShowShareMenu((v) => !v);
                   setShowDownloadMenu(false);
                 }}
@@ -1145,8 +1164,11 @@ export const NewsPostCard: React.FC<NewsPostCardProps> = ({
                   const cLiked = likedCommentIds.includes(c.id);
                   const childReplies = postComments.filter((r) => r.parentCommentId === c.id);
                   const isOwnComment = c.authorId === currentUser.id;
-                  const isAdmin = currentUser.role === 'admin';
-                  const canDeleteComment = isOwnComment || isAdmin;
+                  const canModerate = hasPermission(currentUser, 'comments.moderate');
+                  const canDeleteOwn = hasPermission(currentUser, 'comments.delete_own', {
+                    resourceAuthorId: c.authorId,
+                  });
+                  const canDeleteComment = (isOwnComment && canDeleteOwn) || canModerate;
 
                   return (
                     <div key={c.id} className="space-y-2">
@@ -1276,7 +1298,10 @@ export const NewsPostCard: React.FC<NewsPostCardProps> = ({
                                 const rAuthor = allUsers.find((u) => u.id === r.authorId);
                                 const rLiked = likedCommentIds.includes(r.id);
                                 const isOwnReply = r.authorId === currentUser.id;
-                                const canDeleteReply = isOwnReply || isAdmin;
+                                const canDeleteReplyOwn = hasPermission(currentUser, 'comments.delete_own', {
+                                  resourceAuthorId: r.authorId,
+                                });
+                                const canDeleteReply = (isOwnReply && canDeleteReplyOwn) || canModerate;
                                 return (
                                   <div key={r.id} className="flex items-start gap-2">
                                     <Link
