@@ -177,7 +177,7 @@ export async function handleApiRequest(
   const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const pathname = parsedUrl.pathname;
   const method = req.method?.toUpperCase() || 'GET';
-  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket?.remoteAddress || '127.0.0.1';
 
   // 1. DYNAMIC SEO: robots.txt
   if (pathname === '/robots.txt' && method === 'GET') {
