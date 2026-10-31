@@ -157,7 +157,7 @@ export function revokeAllUserSessions(userId: string): number {
 }
 
 /**
- * Server-Side Sliding-Window Rate Limiter
+ * Server-Side Sliding-Window Rate Limiter (Backed by Persistent SQLite Store)
  */
 export function checkRateLimit(
   key: string,
@@ -165,21 +165,257 @@ export function checkRateLimit(
   windowMs = 60000
 ): { allowed: boolean; remaining: number; retryAfterSeconds: number } {
   const now = Date.now();
-  let bucket = rateLimitMap.get(key);
 
-  if (!bucket || bucket.resetAt < now) {
-    bucket = { count: 1, resetAt: now + windowMs };
-    rateLimitMap.set(key, bucket);
-    return { allowed: true, remaining: maxRequests - 1, retryAfterSeconds: 0 };
+  try {
+    // Delete expired buckets periodically
+    if (Math.random() < 0.05) {
+      db.prepare('DELETE FROM rate_limits WHERE reset_at < ?').run(now);
+    }
+
+    const row = db.prepare('SELECT count, reset_at FROM rate_limits WHERE key = ?').get(key) as
+      | { count: number; reset_at: number }
+      | undefined;
+
+    if (!row || row.reset_at < now) {
+      const resetAt = now + windowMs;
+      db.prepare(
+        'INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = 1, reset_at = ?'
+      ).run(key, resetAt, resetAt);
+      return { allowed: true, remaining: maxRequests - 1, retryAfterSeconds: 0 };
+    }
+
+    const newCount = row.count + 1;
+    if (newCount > maxRequests) {
+      const retryAfterSeconds = Math.ceil((row.reset_at - now) / 1000);
+      return { allowed: false, remaining: 0, retryAfterSeconds };
+    }
+
+    db.prepare('UPDATE rate_limits SET count = ? WHERE key = ?').run(newCount, key);
+    return { allowed: true, remaining: maxRequests - newCount, retryAfterSeconds: 0 };
+  } catch {
+    // Fallback in-memory if DB transient issue occurs
+    let bucket = rateLimitMap.get(key);
+    if (!bucket || bucket.resetAt < now) {
+      bucket = { count: 1, resetAt: now + windowMs };
+      rateLimitMap.set(key, bucket);
+      return { allowed: true, remaining: maxRequests - 1, retryAfterSeconds: 0 };
+    }
+    bucket.count++;
+    if (bucket.count > maxRequests) {
+      const retryAfterSeconds = Math.ceil((bucket.resetAt - now) / 1000);
+      return { allowed: false, remaining: 0, retryAfterSeconds };
+    }
+    return { allowed: true, remaining: maxRequests - bucket.count, retryAfterSeconds: 0 };
+  }
+}
+
+/**
+ * Strict Enterprise Password Validation:
+ * - Minimum 8 characters
+ * - At least one uppercase letter
+ * - At least one lowercase letter
+ * - At least one digit / figure
+ * - At least one special character
+ */
+export function validatePasswordStrength(password: string): { valid: boolean; reason?: string } {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, reason: 'Password is required.' };
+  }
+  if (password.length < 8) {
+    return { valid: false, reason: 'Password must be at least 8 characters long.' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one uppercase letter.' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one lowercase letter.' };
+  }
+  if (!/\d/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one number / figure.' };
+  }
+  if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(password)) {
+    return { valid: false, reason: 'Password must contain at least one special character (!@#$%^&*...).' };
+  }
+  return { valid: true };
+}
+
+/**
+ * Hash single-use tokens (like password reset or email verification) with SHA-256
+ */
+export function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Generate 32-byte secure hex token
+ */
+export function generateSecureToken(bytes = 32): string {
+  return crypto.randomBytes(bytes).toString('hex');
+}
+
+/**
+ * Create a single-use password reset token with 1-hour expiration
+ */
+export function createPasswordResetToken(identifier: string): { token: string; email: string } | null {
+  const clean = identifier.trim().toLowerCase().replace(/^@/, '');
+  const user = db.prepare(`
+    SELECT id, email, username FROM users WHERE LOWER(email) = ? OR LOWER(username) = ?
+  `).get(clean, clean) as { id: string; email: string; username: string } | undefined;
+
+  if (!user) return null;
+
+  const rawToken = generateSecureToken(32);
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+
+  db.prepare(`
+    UPDATE users
+    SET password_reset_token_hash = ?, password_reset_expires_at = ?
+    WHERE id = ?
+  `).run(tokenHash, expiresAt, user.id);
+
+  return { token: rawToken, email: user.email };
+}
+
+/**
+ * Verify token and securely reset password
+ */
+export function resetPasswordWithToken(
+  token: string,
+  newPassword: string
+): { success: boolean; error?: string; userId?: string } {
+  if (!token) return { success: false, error: 'Reset token is required.' };
+
+  const strength = validatePasswordStrength(newPassword);
+  if (!strength.valid) {
+    return { success: false, error: strength.reason };
   }
 
-  bucket.count++;
-  if (bucket.count > maxRequests) {
-    const retryAfterSeconds = Math.ceil((bucket.resetAt - now) / 1000);
-    return { allowed: false, remaining: 0, retryAfterSeconds };
+  const tokenHash = hashToken(token);
+  const user = db.prepare(`
+    SELECT id, email, password_reset_expires_at as expiresAt
+    FROM users
+    WHERE password_reset_token_hash = ?
+  `).get(tokenHash) as { id: string; email: string; expiresAt: string } | undefined;
+
+  if (!user) {
+    return { success: false, error: 'Invalid or expired password reset token.' };
   }
 
-  return { allowed: true, remaining: maxRequests - bucket.count, retryAfterSeconds: 0 };
+  if (new Date(user.expiresAt).getTime() < Date.now()) {
+    db.prepare(`
+      UPDATE users SET password_reset_token_hash = NULL, password_reset_expires_at = NULL WHERE id = ?
+    `).run(user.id);
+    return { success: false, error: 'Password reset token has expired. Please request a new one.' };
+  }
+
+  const newHash = hashPassword(newPassword);
+  db.prepare(`
+    UPDATE users
+    SET password_hash = ?, password_reset_token_hash = NULL, password_reset_expires_at = NULL, updated_at = ?
+    WHERE id = ?
+  `).run(newHash, new Date().toISOString(), user.id);
+
+  // Invalidate all active sessions for security
+  revokeAllUserSessions(user.id);
+
+  return { success: true, userId: user.id };
+}
+
+/**
+ * Create Email Verification Token with 24-hour expiration
+ */
+export function createEmailVerificationToken(userId: string): string {
+  const rawToken = generateSecureToken(32);
+  const tokenHash = hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  db.prepare(`
+    UPDATE users
+    SET email_verification_token_hash = ?, email_verification_expires_at = ?
+    WHERE id = ?
+  `).run(tokenHash, expiresAt, userId);
+
+  return rawToken;
+}
+
+/**
+ * Verify Email with Token
+ */
+export function verifyEmailWithToken(token: string): { success: boolean; error?: string } {
+  if (!token) return { success: false, error: 'Verification token is required.' };
+
+  const tokenHash = hashToken(token);
+  const user = db.prepare(`
+    SELECT id, email_verification_expires_at as expiresAt
+    FROM users
+    WHERE email_verification_token_hash = ?
+  `).get(tokenHash) as { id: string; expiresAt: string } | undefined;
+
+  if (!user) {
+    return { success: false, error: 'Invalid verification token.' };
+  }
+
+  if (new Date(user.expiresAt).getTime() < Date.now()) {
+    return { success: false, error: 'Verification token has expired. Please request a new one.' };
+  }
+
+  db.prepare(`
+    UPDATE users
+    SET email_verified = 1, email_verification_token_hash = NULL, email_verification_expires_at = NULL, updated_at = ?
+    WHERE id = ?
+  `).run(new Date().toISOString(), user.id);
+
+  return { success: true };
+}
+
+/**
+ * Layer 7 Web Application Firewall (WAF) & IDS Threat Inspector
+ * Inspects URL, parameters, and payloads for injection patterns
+ */
+export function inspectRequestThreat(
+  rawUrl: string,
+  bodyString?: string
+): { isThreat: boolean; threatType?: string; details?: string } {
+  const decodedUrl = decodeURIComponent(rawUrl || '');
+  const combined = `${decodedUrl} ${bodyString || ''}`;
+
+  // 1. SQL Injection Signatures
+  const sqliPatterns = [
+    /\bunion\s+(all\s+)?select\b/i,
+    /(\bor\b|\band\b)\s+['"]?1['"]?\s*=\s*['"]?1['"]?/i,
+    /;\s*drop\s+table\b/i,
+    /;\s*alter\s+table\b/i,
+    /\bexec(\s*\(|\s+xp_)/i,
+    /--\s*$/m,
+  ];
+
+  for (const pattern of sqliPatterns) {
+    if (pattern.test(combined)) {
+      return { isThreat: true, threatType: 'SQL_INJECTION', details: `Matched pattern: ${pattern.source}` };
+    }
+  }
+
+  // 2. Directory / Path Traversal Signatures
+  if (/\.\.\/|\.\.\\|%2e%2e%2f|%2e%2e\/|\.\.%2f/i.test(combined)) {
+    return { isThreat: true, threatType: 'PATH_TRAVERSAL', details: 'Relative path traversal dot-dot sequence' };
+  }
+
+  // 3. Stored/Reflected Cross-Site Scripting (XSS)
+  const xssPatterns = [
+    /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+    /javascript:\s*[^\s]/i,
+    /\bonerror\s*=\s*['"][^'"]+['"]/i,
+    /\bonload\s*=\s*['"][^'"]+['"]/i,
+  ];
+
+  for (const pattern of xssPatterns) {
+    if (pattern.test(combined)) {
+      return { isThreat: true, threatType: 'XSS_ATTACK', details: `Matched pattern: ${pattern.source}` };
+    }
+  }
+
+  return { isThreat: false };
 }
 
 /**

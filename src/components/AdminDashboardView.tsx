@@ -50,6 +50,7 @@ import {
   validateRoleCreation,
   validateRoleDeletion,
 } from '../utils/rbac';
+import { api } from '../services/api';
 import {
   AuditLogEntry,
   CommunityNote,
@@ -172,23 +173,33 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 3 * 1024 * 1024) {
       alert('Logo file size exceeds 3MB limit. Please choose a smaller image.');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        onUpdateSettings(
-          { ...settings, logoUrl: reader.result },
-          `Uploaded official publication brand logo (${file.name})`
-        );
-      }
-    };
-    reader.readAsDataURL(file);
+
+    try {
+      const uploadRes = await api.uploadMedia(file);
+      onUpdateSettings(
+        { ...settings, logoUrl: uploadRes.url },
+        `Uploaded official publication brand logo (${file.name}) to server storage`
+      );
+    } catch {
+      // Graceful fallback to client DataURL if backend is offline
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          onUpdateSettings(
+            { ...settings, logoUrl: reader.result },
+            `Uploaded official publication brand logo (${file.name})`
+          );
+        }
+      };
+      reader.readAsDataURL(file);
+    }
     e.target.value = '';
   };
 

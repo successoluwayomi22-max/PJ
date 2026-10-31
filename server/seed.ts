@@ -1,5 +1,6 @@
+import crypto from 'node:crypto';
 import { db, initDatabase } from './db.ts';
-import { hashPassword } from './auth.ts';
+import { hashPassword, validatePasswordStrength } from './auth.ts';
 import { INITIAL_USERS, INITIAL_POSTS, INITIAL_COMMENTS, INITIAL_COMMUNITY_NOTES, INITIAL_SITE_SETTINGS } from '../src/mockData.ts';
 import { SYSTEM_ROLES } from '../src/utils/rbac.ts';
 
@@ -41,17 +42,34 @@ export function seedDatabase() {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  // Default seed password for initial mock journalists/admins:
-  // Elena: Admin@Pulse2026!
-  // Kenji, Amina, Dr. Marcus, etc: Pulse@News2026!
+  // ZERO DEFAULT CREDENTIALS POLICY:
+  // All demo journalists, correspondents, and citizens are assigned cryptographically
+  // unguessable random password hashes so no static backdoor credentials exist in production.
+  // The first administrator must be bootstrapped via POST /api/bootstrap or via explicit
+  // environment variables (INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD).
+  const envAdminEmail = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
+  const envAdminPassword = process.env.INITIAL_ADMIN_PASSWORD;
+
   for (const u of INITIAL_USERS) {
-    const rawPass = u.id === 'user-admin' ? 'Admin@Pulse2026!' : 'Pulse@News2026!';
-    const hash = hashPassword(rawPass);
+    let hash: string;
+
+    if (u.id === 'user-admin' && envAdminEmail && envAdminPassword) {
+      if (validatePasswordStrength(envAdminPassword).valid) {
+        hash = hashPassword(envAdminPassword);
+      } else {
+        console.warn('[Seed] INITIAL_ADMIN_PASSWORD did not satisfy enterprise password policy; using unguessable hash.');
+        hash = hashPassword(crypto.randomBytes(32).toString('hex'));
+      }
+    } else {
+      // Unguessable 256-bit random password hashed with scrypt
+      hash = hashPassword(crypto.randomBytes(32).toString('hex'));
+    }
+
     insertUserStmt.run(
       u.id,
       u.username,
       u.displayName,
-      u.email,
+      u.id === 'user-admin' && envAdminEmail ? envAdminEmail : u.email,
       hash,
       u.avatarUrl,
       u.bio,

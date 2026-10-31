@@ -72,6 +72,26 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   );
   const regAvatarInputRef = useRef<HTMLInputElement>(null);
 
+  // Forgot password modal state
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotMessage, setForgotMessage] = useState<string | null>(null);
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotIdentifier.trim()) return;
+    setForgotLoading(true);
+    try {
+      const res = await api.forgotPassword(forgotIdentifier);
+      setForgotMessage(res.message);
+    } catch (err: any) {
+      setForgotMessage(err.message || 'Unable to process reset request.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
   const handleRegAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -345,7 +365,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <div className="relative group">
                     <Mail
                       className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors ${
-                        isDark ? 'text-slate-400 group-focus-within:text-sky-400' : 'text-slate-400 group-focus-within:text-sky-600'
+                        isDark ? 'text-slate-300 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
                       }`}
                     />
                     <input
@@ -359,7 +379,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       placeholder="Enter your email or @username"
                       className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
                         isDark
-                          ? 'bg-slate-900 text-white border border-slate-700 focus:border-sky-400 placeholder:text-slate-500'
+                          ? 'bg-slate-900 text-white border border-slate-700 focus:border-sky-400 placeholder:text-slate-400'
                           : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
                       }`}
                     />
@@ -369,11 +389,23 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="font-medium opacity-80">Password</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForgotModal(true);
+                        setForgotIdentifier(loginEmail.trim());
+                        setForgotMessage(null);
+                      }}
+                      className="text-[11px] opacity-75 hover:opacity-100 hover:underline transition-opacity"
+                      style={{ color: primaryColor }}
+                    >
+                      Forgot password?
+                    </button>
                   </div>
                   <div className="relative group">
                     <Lock
                       className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors ${
-                        isDark ? 'text-slate-400 group-focus-within:text-sky-400' : 'text-slate-400 group-focus-within:text-sky-600'
+                        isDark ? 'text-slate-300 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
                       }`}
                     />
                     <input
@@ -395,7 +427,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       type="button"
                       onClick={() => setShowLoginPassword((prev) => !prev)}
                       className={`absolute right-3.5 top-1/2 -translate-y-1/2 z-10 p-1 rounded-md transition-colors ${
-                        isDark ? 'text-slate-200 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5'
+                        isDark ? 'text-slate-300 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5'
                       }`}
                       title={showLoginPassword ? 'Hide password' : 'Show password'}
                     >
@@ -747,11 +779,89 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           )}
         </div>
 
-        <div className="flex items-center justify-between text-xs opacity-50 pt-4 border-t border-slate-500/15">
-          <span>Pulse News Network</span>
-          <span>Privacy • Editorial Standards</span>
+        <div className="flex items-center justify-between text-xs pt-4 border-t border-slate-500/15">
+          <button
+            type="button"
+            onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Feed</span>
+          </button>
+          <span className="opacity-50">Pulse News Network • Privacy &amp; Standards</span>
         </div>
       </div>
+
+      {/* FORGOT PASSWORD MODAL */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div
+            className={`max-w-md w-full p-6 rounded-3xl border shadow-2xl space-y-4 ${
+              isDark ? 'bg-slate-900 border-white/15 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-editorial text-lg font-bold">Password Recovery</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForgotModal(false);
+                  setForgotMessage(null);
+                }}
+                className="text-xs opacity-60 hover:opacity-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <p className="text-xs opacity-75 leading-relaxed">
+              Enter your email address or @username. If an account is found, a secure single-use reset instruction will be dispatched.
+            </p>
+
+            <form onSubmit={handleForgotSubmit} className="space-y-3 pt-1">
+              <input
+                type="text"
+                required
+                value={forgotIdentifier}
+                onChange={(e) => setForgotIdentifier(e.target.value)}
+                placeholder="Enter email or username"
+                className={`w-full px-4 py-2.5 rounded-xl text-xs border focus:outline-none ${
+                  isDark
+                    ? 'bg-slate-950 border-slate-700 text-white'
+                    : 'bg-slate-50 border-slate-300 text-slate-900'
+                }`}
+              />
+
+              {forgotMessage && (
+                <div className="p-3 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-400 text-xs">
+                  {forgotMessage}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgotModal(false);
+                    setForgotMessage(null);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-medium border border-slate-500/20 hover:bg-slate-500/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-slate-950 disabled:opacity-50"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  {forgotLoading ? 'Processing...' : 'Send Reset Link'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* RIGHT EDITORIAL PHOTOJOURNALISM SHOWCASE */}
       <div className="lg:col-span-6 relative bg-slate-950 text-white overflow-hidden hidden lg:flex flex-col justify-between p-12 border-l border-white/10">

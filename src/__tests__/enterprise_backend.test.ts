@@ -11,6 +11,12 @@ import {
   checkAccountLockout,
   recordFailedLogin,
   clearAccountLockout,
+  validatePasswordStrength,
+  createPasswordResetToken,
+  resetPasswordWithToken,
+  createEmailVerificationToken,
+  verifyEmailWithToken,
+  inspectRequestThreat,
 } from '../../server/auth.ts';
 import { db, initDatabase } from '../../server/db.ts';
 import { hasPermission, canTransitionWorkflow } from '../utils/rbac.ts';
@@ -274,5 +280,80 @@ describe('PULSE News Enterprise Backend & Authentication Security', () => {
       hasPermission(adminUser, 'articles.update_any', { resourceAuthorId: authorUser.id }),
       true
     );
+  });
+
+  it('6. Strict 8+ Character Password with Upper, Lower, Figure & Special Policy', () => {
+    // Fails: too short
+    assert.strictEqual(validatePasswordStrength('Short1!').valid, false);
+    // Fails: missing uppercase
+    assert.strictEqual(validatePasswordStrength('pulse#2026').valid, false);
+    // Fails: missing figure
+    assert.strictEqual(validatePasswordStrength('PulseNews!').valid, false);
+    // Fails: missing special character
+    assert.strictEqual(validatePasswordStrength('PulseNews2026').valid, false);
+    // Passes: complete enterprise compliance
+    assert.strictEqual(validatePasswordStrength('PulseNews#2026!').valid, true);
+  });
+
+  it('7. Password Reset Single-Use Hashed Token Lifecycle & Revocation', () => {
+    const targetUserId = 'pwd-reset-test-user';
+    const initialPassword = 'Initial#Pass123';
+    const newPassword = 'Updated#Pass456';
+
+    db.prepare(`
+      INSERT OR REPLACE INTO users (
+        id, username, display_name, email, password_hash, role, status, verification_tier, created_at, updated_at
+      ) VALUES (?, 'reset_test_user', 'Reset Tester', 'reset_test@pulse.global', ?, 'reader', 'active', 'standard', datetime('now'), datetime('now'))
+    `).run(targetUserId, hashPassword(initialPassword));
+
+    // Create session to verify it gets revoked upon reset
+    const userSessionToken = createSession(targetUserId, '127.0.0.1', 'ResetClient');
+    assert.ok(getSession(userSessionToken));
+
+    // Request reset token
+    const tokenResult = createPasswordResetToken('reset_test@pulse.global');
+    assert.ok(tokenResult);
+    assert.strictEqual(tokenResult.token.length, 64);
+
+    // Attempt reset with invalid token -> fails
+    const invalidReset = resetPasswordWithToken('invalid-token-12345', newPassword);
+    assert.strictEqual(invalidReset.success, false);
+
+    // Reset with valid token -> succeeds
+    const validReset = resetPasswordWithToken(tokenResult.token, newPassword);
+    assert.strictEqual(validReset.success, true);
+
+    // Token is single-use: replay attempt -> fails
+    const replayReset = resetPasswordWithToken(tokenResult.token, 'AnotherPass#789');
+    assert.strictEqual(replayReset.success, false);
+
+    // Sessions are revoked
+    assert.strictEqual(getSession(userSessionToken), null);
+
+    // Password was updated
+    const userRow = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(targetUserId) as any;
+    assert.strictEqual(verifyPassword(newPassword, userRow.password_hash), true);
+    assert.strictEqual(verifyPassword(initialPassword, userRow.password_hash), false);
+  });
+
+  it('8. Layer 7 WAF Threat Inspection (SQLi, Path Traversal, XSS)', () => {
+    // Clean benign requests -> safe
+    assert.strictEqual(inspectRequestThreat('/api/articles?category=science').isThreat, false);
+    assert.strictEqual(inspectRequestThreat('/api/users').isThreat, false);
+
+    // SQL Injection
+    const sqli1 = inspectRequestThreat('/api/articles?search=1%20UNION%20SELECT%20*%20FROM%20users');
+    assert.strictEqual(sqli1.isThreat, true);
+    assert.strictEqual(sqli1.threatType, 'SQL_INJECTION');
+
+    // Path Traversal
+    const traversal = inspectRequestThreat('/uploads/../../etc/passwd');
+    assert.strictEqual(traversal.isThreat, true);
+    assert.strictEqual(traversal.threatType, 'PATH_TRAVERSAL');
+
+    // XSS injection
+    const xss = inspectRequestThreat('/api/articles', '<script>alert(1)</script>');
+    assert.strictEqual(xss.isThreat, true);
+    assert.strictEqual(xss.threatType, 'XSS_ATTACK');
   });
 });

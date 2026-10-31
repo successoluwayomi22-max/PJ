@@ -1,4 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { db } from './db.ts';
 import {
   hashPassword,
@@ -11,17 +15,28 @@ import {
   checkAccountLockout,
   recordFailedLogin,
   clearAccountLockout,
+  validatePasswordStrength,
+  createPasswordResetToken,
+  resetPasswordWithToken,
+  verifyEmailWithToken,
+  inspectRequestThreat,
 } from './auth.ts';
 import { hasPermission, getRoleDefinition } from '../src/utils/rbac.ts';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const UPLOADS_DIR = path.resolve(__dirname, '..', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
 // Helper to parse JSON request body
-async function parseJsonBody(req: IncomingMessage): Promise<any> {
+async function parseJsonBody(req: IncomingMessage, maxBytes = 10 * 1024 * 1024): Promise<any> {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk;
-      // 2MB payload guard
-      if (body.length > 2 * 1024 * 1024) {
+      if (body.length > maxBytes) {
         reject(new Error('Payload too large'));
       }
     });
@@ -202,9 +217,57 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
     return true;
   }
 
+  // 4. STATIC UPLOADS SERVING (with path traversal defense)
+  if (pathname.startsWith('/uploads/') && method === 'GET') {
+    const filename = path.basename(pathname);
+    const filePath = path.join(UPLOADS_DIR, filename);
+
+    if (fs.existsSync(filePath)) {
+      const ext = path.extname(filename).toLowerCase();
+      const mimeMap: Record<string, string> = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+        '.mp4': 'video/mp4',
+      };
+      const contentType = mimeMap[ext] || 'application/octet-stream';
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      });
+      fs.createReadStream(filePath).pipe(res);
+      return true;
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('File Not Found');
+      return true;
+    }
+  }
+
   // Only route /api paths from here
   if (!pathname.startsWith('/api')) {
     return false;
+  }
+
+  // Layer 7 Web Application Firewall (WAF) & IDS Threat Inspection
+  const threatCheck = inspectRequestThreat(req.url || '');
+  if (threatCheck.isThreat) {
+    db.prepare(`
+      INSERT INTO security_events (id, event_type, severity, ip_address, details, created_at)
+      VALUES (?, ?, 'CRITICAL', ?, ?, ?)
+    `).run(
+      `sec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      threatCheck.threatType || 'WAF_BLOCK',
+      clientIp,
+      threatCheck.details || 'Blocked malicious request pattern',
+      new Date().toISOString()
+    );
+    sendJson(res, 403, { error: 'Request blocked by PULSE Web Application Firewall (WAF).' });
+    return true;
   }
 
   // Global API Rate Limiter: 180 requests / minute per IP
@@ -214,6 +277,119 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
       error: 'Rate limit exceeded. Please wait before making more requests.',
       retryAfterSeconds: globalLimit.retryAfterSeconds,
     });
+    return true;
+  }
+
+  /* =========================================================================
+     1. ONE-TIME FIRST-ADMINISTRATOR BOOTSTRAP PROTOCOL
+  ========================================================================= */
+
+  // POST /api/bootstrap
+  if (pathname === '/api/bootstrap' && method === 'POST') {
+    const existingAdmins = db.prepare(`
+      SELECT count(*) as count FROM users WHERE role IN ('admin', 'super_admin') AND status = 'active'
+    `).get() as { count: number | bigint };
+
+    if (Number(existingAdmins?.count || 0) > 0) {
+      sendJson(res, 403, {
+        error: 'System has already been bootstrapped. Super Administrator already exists. Bootstrap endpoint is permanently locked down.',
+      });
+      return true;
+    }
+
+    const body = await parseJsonBody(req);
+    const displayName = String(body.displayName || '').trim();
+    const rawUsername = String(body.username || '').trim().toLowerCase().replace(/^@/, '');
+    const email = String(body.email || '').trim().toLowerCase();
+    const password = String(body.password || '');
+    const bootstrapSecret = String(body.bootstrapSecret || '');
+
+    // If an environment BOOTSTRAP_SECRET is configured, enforce matching
+    const envSecret = process.env.BOOTSTRAP_SECRET;
+    if (envSecret && bootstrapSecret !== envSecret) {
+      sendJson(res, 401, { error: 'Invalid bootstrap secret.' });
+      return true;
+    }
+
+    if (!displayName || !rawUsername || !email || !password) {
+      sendJson(res, 400, { error: 'Display name, username, email, and password are required to bootstrap.' });
+      return true;
+    }
+
+    const passCheck = validatePasswordStrength(password);
+    if (!passCheck.valid) {
+      sendJson(res, 400, { error: passCheck.reason });
+      return true;
+    }
+
+    const adminId = `admin-bootstrap-${Date.now()}`;
+    const pHash = hashPassword(password);
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO users (
+        id, username, display_name, email, password_hash, avatar_url, bio,
+        location, role, status, verification_tier, trust_score, followers_count,
+        reports_count, email_verified, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'super_admin', 'active', 'journalist', 1.0, 0, 0, 1, ?, ?)
+    `).run(
+      adminId,
+      rawUsername,
+      displayName,
+      email,
+      pHash,
+      body.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+      'System Super Administrator • Initialized via PULSE Secure Bootstrap Protocol',
+      body.location || 'Headquarters Desk',
+      now,
+      now
+    );
+
+    logAudit(
+      adminId,
+      'SYSTEM_BOOTSTRAP',
+      `Super Administrator @${rawUsername} initialized successfully. Bootstrap permanently closed.`,
+      adminId,
+      'USER',
+      clientIp
+    );
+
+    const sessionToken = createSession(
+      adminId,
+      clientIp,
+      req.headers['user-agent'] || 'Bootstrap Client',
+      30 * 24 * 3600 * 1000
+    );
+
+    const safeUser = {
+      id: adminId,
+      username: rawUsername,
+      displayName,
+      email,
+      avatarUrl: body.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+      bio: 'System Super Administrator • Initialized via PULSE Secure Bootstrap Protocol',
+      location: body.location || 'Headquarters Desk',
+      role: 'super_admin',
+      status: 'active',
+      verificationTier: 'journalist',
+      trustScore: 1.0,
+      followersCount: 0,
+      reportsCount: 0,
+      createdAt: now,
+    };
+
+    const cookieHeader = `pulse_session=${encodeURIComponent(sessionToken)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`;
+    sendJson(
+      res,
+      201,
+      {
+        success: true,
+        message: 'Super Administrator initialized successfully.',
+        user: safeUser,
+        token: sessionToken,
+      },
+      { 'Set-Cookie': cookieHeader }
+    );
     return true;
   }
 
@@ -513,6 +689,203 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
 
     const clearCookie = 'pulse_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
     sendJson(res, 200, { success: true, message: 'Account and personal data erased.' }, { 'Set-Cookie': clearCookie });
+    return true;
+  }
+
+  // POST /api/auth/forgot-password (Single-use hashed token recovery)
+  if (pathname === '/api/auth/forgot-password' && method === 'POST') {
+    // Stricter rate limit on password reset requests: 5 per 15 minutes per IP
+    const forgotLimit = checkRateLimit(`pwd_reset:${clientIp}`, 5, 15 * 60 * 1000);
+    if (!forgotLimit.allowed) {
+      sendJson(res, 429, {
+        error: 'Too many password reset requests. Please wait before trying again.',
+        retryAfterSeconds: forgotLimit.retryAfterSeconds,
+      });
+      return true;
+    }
+
+    const body = await parseJsonBody(req);
+    const identifier = String(body.identifier || body.email || body.username || '').trim();
+
+    if (!identifier) {
+      sendJson(res, 400, { error: 'Identifier (email or username) is required.' });
+      return true;
+    }
+
+    const tokenData = createPasswordResetToken(identifier);
+
+    // Anti-user-enumeration: always respond with identical success confirmation
+    logAudit(
+      'SYSTEM',
+      'PASSWORD_RESET_REQUEST',
+      `Password reset link requested for identifier "${identifier.slice(0, 3)}***".`,
+      undefined,
+      'USER',
+      clientIp
+    );
+
+    sendJson(res, 200, {
+      success: true,
+      message: 'If an active account is registered with that identifier, a secure reset instruction has been dispatched.',
+      // In development or test sandbox, provide token in response for testing
+      ...(process.env.NODE_ENV !== 'production' && tokenData ? { devToken: tokenData.token } : {}),
+    });
+    return true;
+  }
+
+  // POST /api/auth/reset-password
+  if (pathname === '/api/auth/reset-password' && method === 'POST') {
+    const body = await parseJsonBody(req);
+    const token = String(body.token || '').trim();
+    const newPassword = String(body.newPassword || '');
+
+    if (!token || !newPassword) {
+      sendJson(res, 400, { error: 'Reset token and new password are required.' });
+      return true;
+    }
+
+    const resetResult = resetPasswordWithToken(token, newPassword);
+    if (!resetResult.success) {
+      sendJson(res, 400, { error: resetResult.error || 'Failed to reset password.' });
+      return true;
+    }
+
+    logAudit(
+      resetResult.userId || 'SYSTEM',
+      'PASSWORD_RESET_SUCCESS',
+      'Account password securely reset using single-use hashed token. All other sessions invalidated.',
+      resetResult.userId,
+      'USER',
+      clientIp
+    );
+
+    sendJson(res, 200, {
+      success: true,
+      message: 'Your password has been successfully reset. Please sign in with your new credentials.',
+    });
+    return true;
+  }
+
+  // POST /api/auth/verify-email
+  if (pathname === '/api/auth/verify-email' && method === 'POST') {
+    const body = await parseJsonBody(req);
+    const token = String(body.token || '').trim();
+
+    if (!token) {
+      sendJson(res, 400, { error: 'Verification token is required.' });
+      return true;
+    }
+
+    const verifyRes = verifyEmailWithToken(token);
+    if (!verifyRes.success) {
+      sendJson(res, 400, { error: verifyRes.error || 'Verification token is invalid or expired.' });
+      return true;
+    }
+
+    sendJson(res, 200, { success: true, message: 'Email address verified successfully.' });
+    return true;
+  }
+
+  // POST /api/upload (Secure Media Upload with Magic-Byte & Path Traversal Guards)
+  if (pathname === '/api/upload' && method === 'POST') {
+    const auth = getAuthUser(req);
+    if (!auth) {
+      sendJson(res, 401, { error: 'Authentication required to upload media.' });
+      return true;
+    }
+
+    const body = await parseJsonBody(req, 10 * 1024 * 1024);
+    const rawData = String(body.data || body.file || '');
+    const originalName = String(body.filename || 'upload.png').trim();
+
+    if (!rawData) {
+      sendJson(res, 400, { error: 'No media data provided.' });
+      return true;
+    }
+
+    // Extract base64 payload
+    let base64Content = rawData;
+    let declaredMime = 'image/png';
+
+    if (rawData.startsWith('data:')) {
+      const match = rawData.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        declaredMime = match[1];
+        base64Content = match[2];
+      }
+    }
+
+    const fileBuffer = Buffer.from(base64Content, 'base64');
+
+    // 10MB limit guard
+    if (fileBuffer.length > 10 * 1024 * 1024) {
+      sendJson(res, 413, { error: 'File size exceeds 10MB limit.' });
+      return true;
+    }
+
+    // Magic Bytes & Header Signature Validation
+    let ext = '.png';
+    let validatedMime = 'image/png';
+
+    if (fileBuffer[0] === 0xff && fileBuffer[1] === 0xd8 && fileBuffer[2] === 0xff) {
+      ext = '.jpg';
+      validatedMime = 'image/jpeg';
+    } else if (
+      fileBuffer[0] === 0x89 &&
+      fileBuffer[1] === 0x50 &&
+      fileBuffer[2] === 0x4e &&
+      fileBuffer[3] === 0x47
+    ) {
+      ext = '.png';
+      validatedMime = 'image/png';
+    } else if (
+      fileBuffer.slice(0, 4).toString('ascii') === 'RIFF' &&
+      fileBuffer.slice(8, 12).toString('ascii') === 'WEBP'
+    ) {
+      ext = '.webp';
+      validatedMime = 'image/webp';
+    } else if (fileBuffer.slice(0, 3).toString('ascii') === 'GIF') {
+      ext = '.gif';
+      validatedMime = 'image/gif';
+    } else if (
+      fileBuffer.slice(0, 100).toString('utf8').includes('<svg') &&
+      !/<script/i.test(fileBuffer.toString('utf8'))
+    ) {
+      ext = '.svg';
+      validatedMime = 'image/svg+xml';
+    } else if (fileBuffer.slice(4, 8).toString('ascii') === 'ftyp') {
+      ext = '.mp4';
+      validatedMime = 'video/mp4';
+    } else {
+      sendJson(res, 415, {
+        error: 'Unsupported or unverified media type. Allowed formats: PNG, JPEG, WebP, GIF, SVG, MP4.',
+      });
+      return true;
+    }
+
+    // Generate safe UUID-based filename (immune to path traversal)
+    const safeFilename = `media-${Date.now()}-${crypto.randomUUID()}${ext}`;
+    const destinationPath = path.join(UPLOADS_DIR, safeFilename);
+
+    fs.writeFileSync(destinationPath, fileBuffer);
+
+    const publicUrl = `/uploads/${safeFilename}`;
+    logAudit(
+      auth.user.id,
+      'MEDIA_UPLOAD',
+      `Uploaded media "${safeFilename}" (${(fileBuffer.length / 1024).toFixed(1)} KB) - ${validatedMime}`,
+      safeFilename,
+      'MEDIA',
+      clientIp
+    );
+
+    sendJson(res, 201, {
+      success: true,
+      url: publicUrl,
+      filename: safeFilename,
+      size: fileBuffer.length,
+      mimeType: validatedMime,
+    });
     return true;
   }
 

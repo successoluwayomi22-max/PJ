@@ -38,6 +38,14 @@ export function initDatabase() {
       trust_score REAL DEFAULT 0.85,
       followers_count INTEGER DEFAULT 0,
       reports_count INTEGER DEFAULT 0,
+      email_verified INTEGER NOT NULL DEFAULT 0,
+      email_verification_token_hash TEXT,
+      email_verification_expires_at TEXT,
+      password_reset_token_hash TEXT,
+      password_reset_expires_at TEXT,
+      mfa_enabled INTEGER NOT NULL DEFAULT 0,
+      mfa_secret TEXT,
+      mfa_recovery_codes TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -203,6 +211,22 @@ export function initDatabase() {
       subscribed_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      key TEXT PRIMARY KEY,
+      count INTEGER NOT NULL,
+      reset_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS security_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      ip_address TEXT,
+      user_id TEXT,
+      details TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     -- Indices for high-speed news feed indexing & querying
     CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
     CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category);
@@ -212,8 +236,27 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_comment_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON user_sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_rate_limits_reset ON rate_limits(reset_at);
+    CREATE INDEX IF NOT EXISTS idx_security_events_time ON security_events(created_at DESC);
   `);
+
+  // Safe migration check for existing databases
+  try {
+    const userCols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+    const colNames = new Set(userCols.map((c) => c.name));
+    if (!colNames.has('email_verified')) db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0;');
+    if (!colNames.has('email_verification_token_hash')) db.exec('ALTER TABLE users ADD COLUMN email_verification_token_hash TEXT;');
+    if (!colNames.has('email_verification_expires_at')) db.exec('ALTER TABLE users ADD COLUMN email_verification_expires_at TEXT;');
+    if (!colNames.has('password_reset_token_hash')) db.exec('ALTER TABLE users ADD COLUMN password_reset_token_hash TEXT;');
+    if (!colNames.has('password_reset_expires_at')) db.exec('ALTER TABLE users ADD COLUMN password_reset_expires_at TEXT;');
+    if (!colNames.has('mfa_enabled')) db.exec('ALTER TABLE users ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0;');
+    if (!colNames.has('mfa_secret')) db.exec('ALTER TABLE users ADD COLUMN mfa_secret TEXT;');
+    if (!colNames.has('mfa_recovery_codes')) db.exec('ALTER TABLE users ADD COLUMN mfa_recovery_codes TEXT;');
+  } catch (migErr) {
+    console.warn('[DB Migration Warning]', migErr);
+  }
 }
 
 // Automatically initialize schema on load
 initDatabase();
+

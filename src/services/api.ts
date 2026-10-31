@@ -122,6 +122,66 @@ export const api = {
     return res;
   },
 
+  async bootstrap(payload: {
+    displayName: string;
+    username: string;
+    email: string;
+    password: string;
+    bootstrapSecret?: string;
+    avatarUrl?: string;
+  }): Promise<{ user: User; token: string }> {
+    const res = await request<{ user: User; token: string }>('/api/bootstrap', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (res.token) setStoredToken(res.token);
+    return res;
+  },
+
+  async forgotPassword(identifier: string): Promise<{ success: boolean; message: string; devToken?: string }> {
+    return request('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
+    });
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    return request('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    });
+  },
+
+  async verifyEmail(token: string): Promise<{ success: boolean; message: string }> {
+    return request('/api/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  },
+
+  async uploadMedia(file: File): Promise<{ url: string; filename: string; size: number; mimeType: string }> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const res = await request<{ url: string; filename: string; size: number; mimeType: string }>('/api/upload', {
+            method: 'POST',
+            body: JSON.stringify({
+              data: reader.result as string,
+              filename: file.name,
+              mimeType: file.type,
+            }),
+          });
+          resolve(res);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file for upload'));
+      reader.readAsDataURL(file);
+    });
+  },
+
   // Articles & Content
   async getArticles(): Promise<{ articles: NewsPost[] }> {
     return request('/api/articles');

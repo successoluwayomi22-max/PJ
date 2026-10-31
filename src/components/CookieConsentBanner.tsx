@@ -246,8 +246,8 @@ export const CookieConsentBanner: React.FC<{
     );
   }
 
-  // When consent has already been given, settings are accessible cleanly via the footer link "Cookie Settings" or Privacy Policy page
-  if (hasConsented) {
+  // When consent has already been given, or on authentication pages, settings are accessible cleanly via the footer link "Cookie Settings" or Privacy Policy page
+  if (hasConsented || (isAuthPage && !isOpenExternal)) {
     return null;
   }
 
