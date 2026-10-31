@@ -60,11 +60,12 @@ const server = http.createServer(async (req, res) => {
         'X-Frame-Options': 'DENY',
         'Referrer-Policy': 'strict-origin-when-cross-origin',
         'Permissions-Policy': 'camera=(), microphone=(), geolocation=(self)',
+        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; media-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-ancestors 'none'; object-src 'none'; base-uri 'self';",
         'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
       };
 
       if (process.env.NODE_ENV === 'production') {
-        headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains';
+        headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
       }
 
       res.writeHead(200, headers);

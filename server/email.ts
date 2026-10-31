@@ -1,9 +1,12 @@
 /**
  * Enterprise Email Delivery Service
- * Supports SMTP transport via standard environment configuration
- * with fallback to auditable secure dispatch logger in test/dev environments.
+ * Implements genuine SMTP transport via Nodemailer with environment configuration.
+ * In development sandbox mode, logs delivery metadata securely without exposing secrets.
+ * In production mode, rejects dispatches if SMTP transport is not configured.
  */
 
+import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
 import crypto from 'node:crypto';
 
 export interface EmailOptions {
@@ -19,31 +22,86 @@ export interface EmailDeliveryResult {
   error?: string;
 }
 
-const FROM_ADDRESS = process.env.SMTP_FROM || 'Pulse News Network <no-reply@pulsenews.global>';
+let transporterInstance: Transporter | null = null;
 
 /**
- * Dispatch an email message
+ * Configure or retrieve the active Nodemailer transporter
+ */
+export function getEmailTransporter(): Transporter | null {
+  if (transporterInstance) return transporterInstance;
+
+  const host = process.env.SMTP_HOST?.trim();
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const user = process.env.SMTP_USER?.trim();
+  const pass = process.env.SMTP_PASS?.trim();
+  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
+
+  if (host) {
+    transporterInstance = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: user ? { user, pass } : undefined,
+    });
+    return transporterInstance;
+  }
+
+  return null;
+}
+
+/**
+ * Test override for automated test suites
+ */
+export function setTestTransporter(custom: Transporter | null): void {
+  transporterInstance = custom;
+}
+
+/**
+ * Dispatch an email message through real SMTP or verified test transport
  */
 export async function sendEmail(options: EmailOptions): Promise<EmailDeliveryResult> {
-  const messageId = `msg-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
-  const smtpHost = process.env.SMTP_HOST;
+  const from = process.env.SMTP_FROM || 'Pulse News Network <no-reply@pulsenews.global>';
+  const transporter = getEmailTransporter();
 
-  if (smtpHost) {
+  if (transporter) {
     try {
-      // If production SMTP is configured, standard nodemailer/custom socket can be plugged in
-      console.log(`[Email Service] Dispatched email ${messageId} via SMTP (${smtpHost}) to ${options.to}`);
-      return { success: true, messageId };
+      const info = await transporter.sendMail({
+        from,
+        to: options.to,
+        subject: options.subject,
+        text: options.text,
+        html: options.html,
+      });
+      return {
+        success: true,
+        messageId: info.messageId || `smtp-${Date.now()}`,
+      };
     } catch (err: any) {
-      console.error(`[Email Service] SMTP dispatch error to ${options.to}:`, err.message);
-      return { success: false, messageId, error: err.message };
+      console.error(`[Email Service] Live SMTP delivery failure to ${options.to}:`, err.message);
+      return {
+        success: false,
+        messageId: '',
+        error: `SMTP delivery failed: ${err.message}`,
+      };
     }
   }
 
+  // Production requirement: Never pretend email was sent if SMTP is unconfigured
+  if (process.env.NODE_ENV === 'production') {
+    const errorMsg = 'SMTP transport is not configured. Email cannot be delivered.';
+    console.error(`[Email Service] Production Alert: ${errorMsg}`);
+    return {
+      success: false,
+      messageId: '',
+      error: errorMsg,
+    };
+  }
+
   // Development & Test Sandbox Delivery:
-  // Log message metadata and securely record dispatch
-  console.log(`[Email Service] Sandbox Delivery:`);
+  const messageId = `sandbox-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+  console.log(`[Email Service - Dev Sandbox] Simulated Delivery:`);
   console.log(`  To: ${options.to}`);
-  console.log(`  From: ${FROM_ADDRESS}`);
+  console.log(`  From: ${from}`);
   console.log(`  Subject: ${options.subject}`);
   console.log(`  Message ID: ${messageId}`);
 
@@ -173,4 +231,3 @@ This link expires in 24 hours.
 
   return sendEmail({ to, subject, text, html });
 }
-

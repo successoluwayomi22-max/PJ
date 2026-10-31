@@ -18,6 +18,7 @@ import {
   validatePasswordStrength,
   createPasswordResetToken,
   resetPasswordWithToken,
+  createEmailVerificationToken,
   verifyEmailWithToken,
   inspectRequestThreat,
   createCsrfToken,
@@ -38,23 +39,42 @@ function defaultAvatarSvg(name: string = 'User'): string {
   return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="100%" height="100%" fill="%230284c7"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="%23ffffff" font-family="sans-serif" font-size="52" font-weight="700">${encodeURIComponent(initial)}</text></svg>`;
 }
 
-function hasDangerousSvgContent(svg: string): boolean {
-  const normalized = svg.toLowerCase();
-  const dangerousPatterns = [
-    /<script[\s>]/i,
-    /<\/script>/i,
-    /javascript:/i,
-    /data:\s*text\/html/i,
-    /<foreignobject[\s>]/i,
-    /<iframe[\s>]/i,
-    /<object[\s>]/i,
-    /<embed[\s>]/i,
-    /\bon\w+\s*=/i,
-    /<set[\s>]/i,
-    /<animate[\s>]/i,
-    /xlink:href\s*=\s*['"]\s*javascript:/i,
+export function validateSvgSecurity(svgText: string): { safe: boolean; reason?: string } {
+  const normalized = svgText.toLowerCase();
+
+  // 1. Prohibited active tags & elements
+  const blockedTags = [
+    '<script', '</script>', '<foreignobject', '</foreignobject>',
+    '<iframe', '</iframe>', '<object', '</object>',
+    '<embed', '</embed>', '<applet', '</applet>',
+    '<meta', '<link', '<form', '<input', '<button',
+    '<audio', '<video', '<track', '<source',
+    '<animate', '<set', '<handler', '<listener',
+    '<discard', '<use',
   ];
-  return dangerousPatterns.some((pattern) => pattern.test(normalized));
+  for (const tag of blockedTags) {
+    if (normalized.includes(tag)) {
+      return { safe: false, reason: `Disallowed active element detected: ${tag}` };
+    }
+  }
+
+  // 2. Prohibited inline event handlers: on* (onload, onerror, onclick, etc.)
+  if (/\bon\w+\s*=/i.test(normalized)) {
+    return { safe: false, reason: 'Inline event handlers (e.g. onload=, onerror=) are strictly forbidden' };
+  }
+
+  // 3. Prohibited URL protocols: javascript:, data:, vbscript:
+  if (/href\s*=\s*['"]?\s*(javascript|vbscript|data):/i.test(normalized) ||
+      /xlink:href\s*=\s*['"]?\s*(javascript|vbscript|data):/i.test(normalized)) {
+    return { safe: false, reason: 'Dangerous script protocol detected in href/xlink:href' };
+  }
+
+  // 4. Prohibited entity encoding / external DTD injection
+  if (/<!entity/i.test(normalized) || /<!doctype[^>]*system/i.test(normalized)) {
+    return { safe: false, reason: 'External DTD or XML entity definitions are forbidden' };
+  }
+
+  return { safe: true };
 }
 
 function getSecureCookieHeader(sessionToken: string, maxAgeDays = 30): string {
@@ -268,10 +288,17 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
         '.mp4': 'video/mp4',
       };
       const contentType = mimeMap[ext] || 'application/octet-stream';
+      const isSvg = ext === '.svg';
       res.writeHead(200, {
         'Content-Type': contentType,
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'public, max-age=31536000, immutable',
+        ...(isSvg
+          ? {
+              'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+              'Content-Disposition': 'inline; filename="media.svg"',
+            }
+          : {}),
       });
       fs.createReadStream(filePath).pipe(res);
       return true;
@@ -324,6 +351,49 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
 
   // 0.1 STATE-CHANGING CSRF & ORIGIN SECURITY ENFORCEMENT
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    // 0.1.1 Origin & Referer Validation
+    const originHeader = (req.headers['origin'] as string | undefined)?.toLowerCase().trim();
+    const refererHeader = (req.headers['referer'] as string | undefined)?.toLowerCase().trim();
+    const reqHost = (req.headers.host || 'localhost:5173').toLowerCase();
+
+    const envAllowed = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim().toLowerCase())
+      : [];
+    const defaultAllowed = [
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      `http://${reqHost}`,
+      `https://${reqHost}`,
+      ...envAllowed,
+    ];
+
+    if (originHeader) {
+      const isAllowed = defaultAllowed.some((ao) => originHeader === ao || originHeader.startsWith(ao));
+      if (!isAllowed) {
+        sendJson(res, 403, {
+          error: 'Cross-Origin Request Blocked: Origin header is not authorized.',
+        });
+        return true;
+      }
+    } else if (refererHeader && process.env.NODE_ENV === 'production') {
+      try {
+        const refOrigin = new URL(refererHeader).origin.toLowerCase();
+        const isAllowed = defaultAllowed.some((ao) => refOrigin === ao || refOrigin.startsWith(ao));
+        if (!isAllowed) {
+          sendJson(res, 403, {
+            error: 'Cross-Origin Request Blocked: Referer origin is not authorized.',
+          });
+          return true;
+        }
+      } catch {
+        sendJson(res, 403, { error: 'Cross-Origin Request Blocked: Malformed Referer header.' });
+        return true;
+      }
+    }
+
+    // 0.1.2 CSRF Validation
     const publicCsrfExemptions = [
       '/api/auth/login',
       '/api/auth/register',
@@ -435,7 +505,7 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
         adminId,
         clientIp,
         req.headers['user-agent'] || 'Bootstrap Client',
-        30 * 24 * 3600 * 1000
+        30
       );
 
       const csrfToken = createCsrfToken(sessionToken);
@@ -465,7 +535,6 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
           success: true,
           message: 'Super Administrator initialized successfully.',
           user: safeUser,
-          token: sessionToken,
           csrfToken,
         },
         { 'Set-Cookie': cookieHeader }
@@ -544,7 +613,7 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
       userRow.id,
       clientIp,
       req.headers['user-agent'] || 'Unknown Browser',
-      30 * 24 * 3600 * 1000
+      30
     );
 
     const roleData = getRoleDefinition(userRow.role);
@@ -558,7 +627,6 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
 
     sendJson(res, 200, {
       user: safeUser,
-      token: sessionToken,
       csrfToken,
       role: roleData,
       permissions: roleData?.permissions || [],
@@ -622,13 +690,21 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
       now
     );
 
-    // Create session
+    // Create session (30-day expiration)
     const sessionToken = createSession(
       userId,
       clientIp,
       req.headers['user-agent'] || 'Unknown Browser',
-      30 * 24 * 3600 * 1000
+      30
     );
+
+    // Dispatch email verification token
+    const verificationToken = createEmailVerificationToken(userId);
+    const proto = (req.headers['x-forwarded-proto'] as string) || (req.headers.host?.includes('localhost') ? 'http' : 'https');
+    const appUrl = `${proto}://${req.headers.host || 'localhost:5173'}`;
+    sendEmailVerificationEmail(email, verificationToken, appUrl).catch((err) => {
+      console.error('[Register] Email verification dispatch error:', err?.message || err);
+    });
 
     const safeUser = {
       id: userId,
@@ -653,7 +729,6 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
 
     sendJson(res, 201, {
       user: safeUser,
-      token: sessionToken,
       csrfToken,
       role: roleData,
       permissions: roleData?.permissions || [],
@@ -956,9 +1031,10 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
       fileBuffer.toString('utf8').includes('xmlns="http://www.w3.org/2000/svg"')
     ) {
       const svgText = fileBuffer.toString('utf8');
-      if (hasDangerousSvgContent(svgText)) {
+      const svgCheck = validateSvgSecurity(svgText);
+      if (!svgCheck.safe) {
         sendJson(res, 400, {
-          error: 'Security threat: SVG contains potentially dangerous executable content (scripts, event handlers, or embedded objects).',
+          error: `Security threat: SVG rejected. ${svgCheck.reason || 'Contains potentially dangerous content.'}`,
         });
         return true;
       }
@@ -1416,6 +1492,41 @@ Sitemap: http://${req.headers.host || 'localhost'}/sitemap.xml
 
     const logs = db.prepare('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 200').all();
     sendJson(res, 200, { logs });
+    return true;
+  }
+
+  // GET /api/health (Public health check)
+  if (pathname === '/api/health' && method === 'GET') {
+    sendJson(res, 200, {
+      status: 'healthy',
+      service: 'Pulse News Production Engine',
+      timestamp: new Date().toISOString(),
+    });
+    return true;
+  }
+
+  // GET /api/telemetry (Authenticated Admin OS Telemetry)
+  if (pathname === '/api/telemetry' && method === 'GET') {
+    const auth = getAuthUser(req);
+    if (!auth || (auth.user.role !== 'admin' && auth.user.role !== 'super_admin')) {
+      sendJson(res, 403, { error: 'Access denied: Viewing system telemetry requires administrative authorization.' });
+      return true;
+    }
+
+    const mem = process.memoryUsage();
+    sendJson(res, 200, {
+      status: 'operational',
+      environment: process.env.NODE_ENV || 'production',
+      uptimeSeconds: Math.floor(process.uptime()),
+      memory: {
+        rssMb: Math.round(mem.rss / 1024 / 1024),
+        heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+      },
+      nodeVersion: process.version,
+      platform: process.platform,
+      timestamp: new Date().toISOString(),
+    });
     return true;
   }
 

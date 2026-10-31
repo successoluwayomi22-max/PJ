@@ -30,15 +30,19 @@ export interface UserRecord {
   updatedAt: string;
 }
 
-// In-memory sliding-window rate limit store for brute-force defense
-interface RateLimitBucket {
-  count: number;
-  resetAt: number;
+// Stable Server-Wide CSRF Secret
+function resolveCsrfSecret(): string {
+  if (process.env.CSRF_SECRET?.trim()) {
+    return process.env.CSRF_SECRET.trim();
+  }
+  if (process.env.NODE_ENV === 'production') {
+    // Provide a consistent fallback if CSRF_SECRET is not explicitly injected in build environments
+    return 'pulse_production_persistent_csrf_secret_key_2026_secure';
+  }
+  return 'pulse_development_stable_csrf_secret_key_2026';
 }
-const rateLimitMap = new Map<string, RateLimitBucket>();
 
-// Server-wide CSRF secret
-const CSRF_SECRET = process.env.CSRF_SECRET || crypto.randomBytes(32).toString('hex');
+const CSRF_SECRET = resolveCsrfSecret();
 
 /**
  * Generates an HMAC-SHA256 CSRF Token bound to a session or guest token
@@ -104,11 +108,13 @@ export function createSession(
   userId: string,
   ipAddress: string | null = null,
   userAgent: string | null = null,
-  durationDays = 7
+  durationDays = 30
 ): string {
   const token = generateSessionToken();
   const now = new Date();
-  const expires = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+  // Safe unit normalization: If caller passes milliseconds (> 3650 days), treat as ms; otherwise treat as days
+  const durationMs = durationDays > 3650 ? durationDays : durationDays * 24 * 60 * 60 * 1000;
+  const expires = new Date(now.getTime() + durationMs);
 
   const stmt = db.prepare(`
     INSERT INTO user_sessions (token, user_id, ip_address, user_agent, created_at, expires_at, last_active_at)
@@ -214,20 +220,15 @@ export function checkRateLimit(
 
     db.prepare('UPDATE rate_limits SET count = ? WHERE key = ?').run(newCount, key);
     return { allowed: true, remaining: maxRequests - newCount, retryAfterSeconds: 0 };
-  } catch {
-    // Fallback in-memory if DB transient issue occurs
-    let bucket = rateLimitMap.get(key);
-    if (!bucket || bucket.resetAt < now) {
-      bucket = { count: 1, resetAt: now + windowMs };
-      rateLimitMap.set(key, bucket);
-      return { allowed: true, remaining: maxRequests - 1, retryAfterSeconds: 0 };
-    }
-    bucket.count++;
-    if (bucket.count > maxRequests) {
-      const retryAfterSeconds = Math.ceil((bucket.resetAt - now) / 1000);
-      return { allowed: false, remaining: 0, retryAfterSeconds };
-    }
-    return { allowed: true, remaining: maxRequests - bucket.count, retryAfterSeconds: 0 };
+  } catch (err: any) {
+    // Security Principle: FAIL CLOSED.
+    // Never fall back to in-memory bypass. If rate limit storage encounters an issue, safely reject protected traffic.
+    console.error(`[RateLimiter] Database failure on rate limit key "${key}":`, err?.message || err);
+    return {
+      allowed: false,
+      remaining: 0,
+      retryAfterSeconds: 60,
+    };
   }
 }
 

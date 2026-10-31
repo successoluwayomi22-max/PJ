@@ -236,9 +236,9 @@ export function App() {
   const [currentUserId, setCurrentUserId] = useState<string>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_current_user_id`);
-      return saved && saved !== 'user-elena' ? saved : 'user-kenji';
+      return saved && saved !== 'user-elena' ? saved : 'guest';
     } catch {
-      return 'user-kenji';
+      return 'guest';
     }
   });
   const [lang, setLang] = useState<LanguageCode>('en');
@@ -394,7 +394,49 @@ export function App() {
     setUserMenuOpen(false);
   }, [location.pathname]);
 
-  const handleSignOut = () => {
+  // Authoritative server session verification on mount
+  useEffect(() => {
+    let isMounted = true;
+    api
+      .getMe()
+      .then((res) => {
+        if (!isMounted) return;
+        if (res?.user) {
+          setUsers((prev) => {
+            const idx = prev.findIndex((u) => u.id === res.user.id);
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = { ...updated[idx], ...res.user };
+              return updated;
+            }
+            return [...prev, res.user];
+          });
+          setCurrentUserId(res.user.id);
+          try {
+            localStorage.setItem(`${STORAGE_KEY}_current_user_id`, res.user.id);
+          } catch {}
+        } else {
+          setCurrentUserId('guest');
+          try {
+            localStorage.setItem(`${STORAGE_KEY}_current_user_id`, 'guest');
+          } catch {}
+        }
+      })
+      .catch(() => {
+        // network or server error fallback
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleSignOut = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // ignore network errors
+    }
     setCurrentUserId('guest');
     try {
       localStorage.setItem(`${STORAGE_KEY}_current_user_id`, 'guest');
@@ -2384,6 +2426,7 @@ export function App() {
               onUpdateUser={handleUpdateUser}
               onToggleFollow={handleToggleFollow}
               onDeleteAccount={handleDeleteAccount}
+              onSignOut={handleSignOut}
             />
           }
         />

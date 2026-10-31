@@ -5,7 +5,6 @@
 
 import { NewsPost, SiteSettings, User, RoleDefinition } from '../types';
 
-const TOKEN_KEY = 'pulse_auth_token_v2';
 let csrfTokenCache: string | null = null;
 
 export function setCsrfToken(token: string | null) {
@@ -27,36 +26,11 @@ export async function fetchCsrfToken(): Promise<string> {
   return '';
 }
 
-export function getStoredToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setStoredToken(token: string | null) {
-  try {
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(TOKEN_KEY);
-    }
-  } catch {
-    // ignore
-  }
-}
-
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const token = getStoredToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
   };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
 
   const method = (options.method || 'GET').toUpperCase();
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
@@ -71,7 +45,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const res = await fetch(endpoint, {
     ...options,
     headers,
-    credentials: 'include', // for HttpOnly session cookie
+    credentials: 'include', // HttpOnly session cookie is authoritative
   });
 
   const data = await res.json().catch(() => ({}));
@@ -84,12 +58,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 export const api = {
   // Authentication
-  async login(identifier: string, password: string): Promise<{ user: User; token: string; role: RoleDefinition }> {
-    const res = await request<{ user: User; token: string; role: RoleDefinition; csrfToken?: string }>('/api/auth/login', {
+  async login(identifier: string, password: string): Promise<{ user: User; role: RoleDefinition }> {
+    const res = await request<{ user: User; role: RoleDefinition; csrfToken?: string }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ identifier, password }),
     });
-    if (res.token) setStoredToken(res.token);
     if (res.csrfToken) setCsrfToken(res.csrfToken);
     return res;
   },
@@ -103,12 +76,11 @@ export const api = {
     avatarUrl?: string;
     bio?: string;
     location?: string;
-  }): Promise<{ user: User; token: string; role: RoleDefinition }> {
-    const res = await request<{ user: User; token: string; role: RoleDefinition; csrfToken?: string }>('/api/auth/register', {
+  }): Promise<{ user: User; role: RoleDefinition }> {
+    const res = await request<{ user: User; role: RoleDefinition; csrfToken?: string }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    if (res.token) setStoredToken(res.token);
     if (res.csrfToken) setCsrfToken(res.csrfToken);
     return res;
   },
@@ -119,7 +91,6 @@ export const api = {
       if (res?.csrfToken) setCsrfToken(res.csrfToken);
       return res;
     } catch {
-      setStoredToken(null);
       setCsrfToken(null);
       return null;
     }
@@ -129,7 +100,6 @@ export const api = {
     try {
       await request('/api/auth/logout', { method: 'POST' });
     } finally {
-      setStoredToken(null);
       setCsrfToken(null);
     }
   },
@@ -138,7 +108,6 @@ export const api = {
     try {
       await request('/api/auth/logout-all', { method: 'POST' });
     } finally {
-      setStoredToken(null);
       setCsrfToken(null);
     }
   },
@@ -155,7 +124,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ password }),
     });
-    setStoredToken(null);
+    setCsrfToken(null);
     return res;
   },
 
@@ -166,12 +135,12 @@ export const api = {
     password: string;
     bootstrapSecret?: string;
     avatarUrl?: string;
-  }): Promise<{ user: User; token: string }> {
-    const res = await request<{ user: User; token: string }>('/api/bootstrap', {
+  }): Promise<{ user: User; role?: RoleDefinition }> {
+    const res = await request<{ user: User; role?: RoleDefinition; csrfToken?: string }>('/api/bootstrap', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    if (res.token) setStoredToken(res.token);
+    if (res.csrfToken) setCsrfToken(res.csrfToken);
     return res;
   },
 

@@ -135,7 +135,7 @@ export default defineConfig({
                     id: `log-${Date.now()}`,
                     timestamp: new Date().toISOString(),
                     level: 'HEAP',
-                    message: 'Admin triggered Redis/CDN Cache Purge & V8 Heap Compaction',
+                    message: '[Development Environment] Local cache state reset and memory garbage-collection requested',
                     latencyMs: 6,
                   });
                 } else if (payload.action === 'heap_snapshot') {

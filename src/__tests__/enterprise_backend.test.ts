@@ -21,6 +21,8 @@ import {
   verifyCsrfToken,
 } from '../../server/auth.ts';
 import { db, initDatabase } from '../../server/db.ts';
+import { validateSvgSecurity } from '../../server/routes.ts';
+import { sendEmailVerificationEmail, sendPasswordResetEmail } from '../../server/email.ts';
 import { hasPermission, canTransitionWorkflow } from '../utils/rbac.ts';
 import type { User, NewsPost } from '../types.ts';
 
@@ -444,5 +446,66 @@ describe('PULSE News Enterprise Backend & Authentication Security', () => {
     assert.strictEqual(hasDangerousSvg('<svg><foreignObject><body><script>bad()</script></body></foreignObject></svg>'), true);
     assert.strictEqual(hasDangerousSvg('<svg><a xlink:href="javascript:evil()"><circle r="10"/></a></svg>'), true);
     assert.strictEqual(hasDangerousSvg('<svg><rect onerror="evil()"/></svg>'), true);
+  });
+
+  it('12. Session Expiration & Unit Normalization (30 Days Agreement)', () => {
+    const testUserId = 'test-expiry-user';
+    db.prepare(`
+      INSERT OR REPLACE INTO users (
+        id, username, display_name, email, password_hash, role, status, verification_tier, created_at, updated_at
+      ) VALUES (?, 'expiry_user', 'Expiry User', 'expiry@session.local', 'hash', 'reader', 'active', 'standard', datetime('now'), datetime('now'))
+    `).run(testUserId);
+
+    // 1. Create standard 30-day session
+    const token30 = createSession(testUserId, '10.0.0.1', 'Mozilla/5.0', 30);
+    const session30 = getSession(token30);
+    assert.ok(session30);
+    // Expiration should be roughly 30 days in the future (within 10 seconds tolerance)
+    const expectedExpiry30 = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    const actualExpiryMs = new Date(session30.expiresAt).getTime();
+    assert.ok(Math.abs(actualExpiryMs - expectedExpiry30) < 10000);
+
+    // 2. An expired session is cleaned up and rejected by getSession
+    const expiredToken = createSession(testUserId, '10.0.0.1', 'Mozilla/5.0', 1);
+    // Manually force SQLite expires_at to the past
+    db.prepare('UPDATE user_sessions SET expires_at = ? WHERE token = ?').run(
+      new Date(Date.now() - 10000).toISOString(),
+      expiredToken
+    );
+    const expiredSession = getSession(expiredToken);
+    assert.strictEqual(expiredSession, null);
+  });
+
+  it('13. SVG Security Validator (Full Prohibited Elements & Event Handlers)', () => {
+    const safeSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#0284c7"/></svg>';
+    const safeCheck = validateSvgSecurity(safeSvg);
+    assert.strictEqual(safeCheck.safe, true);
+
+    // Reject script tags
+    const scriptCheck = validateSvgSecurity('<svg><script>alert(1)</script></svg>');
+    assert.strictEqual(scriptCheck.safe, false);
+
+    // Reject inline onload
+    const eventCheck = validateSvgSecurity('<svg onload="fetch(\'/steal\')"></svg>');
+    assert.strictEqual(eventCheck.safe, false);
+
+    // Reject javascript: protocol
+    const protoCheck = validateSvgSecurity('<svg><a href="javascript:alert(1)"><circle r="5"/></a></svg>');
+    assert.strictEqual(protoCheck.safe, false);
+
+    // Reject foreignObject
+    const foreignCheck = validateSvgSecurity('<svg><foreignObject><div>x</div></foreignObject></svg>');
+    assert.strictEqual(foreignCheck.safe, false);
+  });
+
+  it('14. Email Service: Verification & Reset Mail Integration Handling', async () => {
+    // In test environment, sending email should safely resolve (mock/logging transport)
+    const verifyResult = await sendEmailVerificationEmail('editor@pulsenews.global', 'token-abc-123', 'http://localhost:5173');
+    assert.ok(verifyResult);
+    assert.strictEqual(verifyResult.success, true);
+
+    const resetResult = await sendPasswordResetEmail('editor@pulsenews.global', 'reset-token-xyz', 'http://localhost:5173');
+    assert.ok(resetResult);
+    assert.strictEqual(resetResult.success, true);
   });
 });

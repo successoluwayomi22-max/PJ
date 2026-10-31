@@ -366,7 +366,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <div className="relative group">
                     <Mail
                       className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors ${
-                        isDark ? 'text-slate-300 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
+                        isDark ? 'text-sky-400 group-focus-within:text-sky-300' : 'text-slate-500 group-focus-within:text-sky-600'
                       }`}
                     />
                     <input
@@ -406,7 +406,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <div className="relative group">
                     <Lock
                       className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors ${
-                        isDark ? 'text-slate-300 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
+                        isDark ? 'text-sky-400 group-focus-within:text-sky-300' : 'text-slate-500 group-focus-within:text-sky-600'
                       }`}
                     />
                     <input
@@ -428,7 +428,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       type="button"
                       onClick={() => setShowLoginPassword((prev) => !prev)}
                       className={`absolute right-3.5 top-1/2 -translate-y-1/2 z-10 p-1 rounded-md transition-colors ${
-                        isDark ? 'text-slate-300 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5'
+                        isDark ? 'text-sky-400 hover:text-white hover:bg-white/10' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5'
                       }`}
                       title={showLoginPassword ? 'Hide password' : 'Show password'}
                     >

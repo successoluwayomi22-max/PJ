@@ -9,6 +9,7 @@ import {
   Eye,
   FileText,
   Film,
+  LogOut,
   MapPin,
   Plus,
   Repeat2,
@@ -34,6 +35,7 @@ interface ProfilePageProps {
   onUpdateUser?: (userId: string, updates: Partial<User>, reason?: string) => void;
   onToggleFollow?: (userId: string) => void;
   onDeleteAccount?: (userId: string, passwordVerification: string) => boolean;
+  onSignOut?: () => void;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
@@ -50,6 +52,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   onUpdateUser,
   onToggleFollow,
   onDeleteAccount,
+  onSignOut,
 }) => {
   const { username } = useParams<{ username: string }>();
   const navigate = useNavigate();
@@ -161,12 +164,26 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 </button>
               )}
               {profileUser.id === currentUser.id ? (
-                <Link
-                  to="/studio"
-                  className="px-4 py-2 rounded-full text-xs font-semibold border border-slate-500/30 hover:bg-slate-500/10 transition-colors"
-                >
-                  Open Reporter Studio
-                </Link>
+                <>
+                  <Link
+                    to={currentUser.role === 'admin' || currentUser.role === 'super_admin' ? '/admin' : '/studio'}
+                    className="px-4 py-2 rounded-full text-xs font-semibold border border-slate-500/30 hover:bg-slate-500/10 transition-colors"
+                  >
+                    {currentUser.role === 'admin' || currentUser.role === 'super_admin'
+                      ? 'Open Admin OS'
+                      : 'Open Creator Studio'}
+                  </Link>
+                  {onSignOut && (
+                    <button
+                      type="button"
+                      onClick={onSignOut}
+                      className="px-4 py-2 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 hover:bg-rose-500/25 transition-colors flex items-center gap-1.5"
+                      title="Sign Out of Pulse News"
+                    >
+                      <LogOut className="w-3.5 h-3.5" /> Sign Out
+                    </button>
+                  )}
+                </>
               ) : (
                 <button
                   type="button"
