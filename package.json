@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "start": "node --experimental-strip-types server/server.ts",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test src/__tests__/security_audit.test.ts src/__tests__/rbac_governance.test.ts"
+    "test": "node --experimental-strip-types --test src/__tests__/security_audit.test.ts src/__tests__/rbac_governance.test.ts src/__tests__/enterprise_backend.test.ts"
   },
   "dependencies": {
     "@types/three": "^0.187.0",

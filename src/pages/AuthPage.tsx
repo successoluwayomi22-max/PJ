@@ -24,6 +24,7 @@ import {
   recordLoginFailure,
   recordLoginSuccess,
 } from '../utils/security';
+import { api } from '../services/api';
 
 interface AuthPageProps {
   users: User[];
@@ -33,6 +34,7 @@ interface AuthPageProps {
   isDark: boolean;
   onSelectUser: (user: User) => void;
   onCreateUser: (newUser: User) => void;
+  onSignOut?: () => void;
 }
 
 export const AuthPage: React.FC<AuthPageProps> = ({
@@ -43,6 +45,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   isDark,
   onSelectUser,
   onCreateUser,
+  onSignOut,
 }) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -81,7 +84,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const search = loginEmail.trim().toLowerCase();
     const cleanHandle = search.replace(/^@/, '');
@@ -107,50 +110,50 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       return;
     }
 
-    const matched = users.find(
-      (u) =>
-        u.email.toLowerCase() === search ||
-        u.username.toLowerCase() === cleanHandle
-    );
+    try {
+      const res = await api.login(search, loginPassword);
+      recordLoginSuccess(search);
+      setLoginError(null);
+      onSelectUser(res.user);
+      navigate(
+        res.user.role === 'admin' || res.user.role === 'super_admin'
+          ? '/admin'
+          : res.user.verificationTier === 'journalist' || res.user.role === 'editor'
+          ? '/studio'
+          : '/dashboard'
+      );
+    } catch (err: any) {
+      // Fallback to local user lookup if API server is not reached yet
+      const matched = users.find(
+        (u) =>
+          u.email.toLowerCase() === search ||
+          u.username.toLowerCase() === cleanHandle
+      );
 
-    if (!matched) {
+      if (matched && matched.password && matched.password === loginPassword) {
+        recordLoginSuccess(search);
+        setLoginError(null);
+        onSelectUser(matched);
+        navigate(
+          matched.role === 'admin' || matched.role === 'super_admin'
+            ? '/admin'
+            : matched.verificationTier === 'journalist' || matched.role === 'editor'
+            ? '/studio'
+            : '/dashboard'
+        );
+        return;
+      }
+
       const failStatus = recordLoginFailure(search);
       setLoginError(
         failStatus.locked
           ? `Too many failed attempts. Login locked for ${failStatus.retryAfterSeconds}s.`
-          : `No account found with identifier "${loginEmail.trim()}". (${failStatus.retryAfterSeconds === 0 ? 'Attempts remaining before lockout' : ''})`
+          : err.message || 'Invalid username/email or password.'
       );
-      return;
     }
-
-    // Password validation: match user password if set, or accept password123 / password length >= 4
-    const validPassword = matched.password
-      ? loginPassword === matched.password
-      : loginPassword === 'password123' || loginPassword.length >= 4;
-
-    if (!validPassword) {
-      const failStatus = recordLoginFailure(search);
-      setLoginError(
-        failStatus.locked
-          ? `Too many incorrect attempts. Login locked for ${failStatus.retryAfterSeconds}s.`
-          : 'Incorrect password. Please verify your credentials and try again.'
-      );
-      return;
-    }
-
-    recordLoginSuccess(search);
-    setLoginError(null);
-    onSelectUser(matched);
-    navigate(
-      matched.role === 'admin'
-        ? '/admin'
-        : matched.verificationTier === 'journalist' || matched.role === 'moderator'
-        ? '/studio'
-        : '/'
-    );
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegisterError(null);
 
@@ -208,28 +211,43 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     }
 
     const isCreator = accountRole === 'creator';
-    const newUser: User = {
-      id: `user-${Date.now()}`,
-      username: cleanHandle,
-      displayName: name,
-      email: cleanEmail,
-      password: password,
-      avatarUrl: avatarPreview,
-      bio: isCreator
-        ? 'Accredited Journalist & Creator publishing verified field dispatches on Pulse News.'
-        : 'Verified Reader & Community Contributor on Pulse News.',
-      location: bureau.trim() || 'London, UK',
-      role: isCreator ? 'moderator' : 'user',
-      status: 'active',
-      verificationTier: isCreator ? 'journalist' : 'verified_citizen',
-      trustScore: isCreator ? 0.95 : 0.92,
-      joinedAt: new Date().toISOString().slice(0, 10),
-      followersCount: 0,
-      reportsCount: 0,
-    };
+    try {
+      const res = await api.register({
+        displayName: name,
+        username: cleanHandle,
+        email: cleanEmail,
+        password: password,
+        role: isCreator ? 'journalist' : 'reader',
+        avatarUrl: avatarPreview,
+        location: bureau.trim() || 'London, UK',
+      });
+      onCreateUser(res.user);
+      navigate(isCreator ? '/studio' : '/dashboard');
+    } catch (err: any) {
+      // Local fallback
+      const newUser: User = {
+        id: `user-${Date.now()}`,
+        username: cleanHandle,
+        displayName: name,
+        email: cleanEmail,
+        password: password,
+        avatarUrl: avatarPreview,
+        bio: isCreator
+          ? 'Accredited Journalist & Creator publishing verified field dispatches on Pulse News.'
+          : 'Verified Reader & Community Contributor on Pulse News.',
+        location: bureau.trim() || 'London, UK',
+        role: isCreator ? 'moderator' : 'user',
+        status: 'active',
+        verificationTier: isCreator ? 'journalist' : 'verified_citizen',
+        trustScore: isCreator ? 0.95 : 0.92,
+        joinedAt: new Date().toISOString().slice(0, 10),
+        followersCount: 0,
+        reportsCount: 0,
+      };
 
-    onCreateUser(newUser);
-    navigate(isCreator ? '/studio' : '/');
+      onCreateUser(newUser);
+      navigate(isCreator ? '/studio' : '/dashboard');
+    }
   };
 
   return (
@@ -265,7 +283,46 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           </div>
         </div>
 
-        <div className="max-w-md w-full mx-auto my-8 space-y-6">
+        <div className="max-w-md w-full mx-auto my-auto py-6 space-y-6">
+          {currentUser && currentUser.status === 'active' && (
+            <div className={`p-5 rounded-2xl border text-center space-y-3.5 shadow-lg ${
+              isDark ? 'border-sky-500/30 bg-sky-500/10 text-slate-100' : 'border-sky-200 bg-sky-50 text-slate-900'
+            }`}>
+              <div className="flex items-center justify-center gap-3">
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.displayName}
+                  className="w-11 h-11 rounded-full object-cover ring-2 ring-sky-400"
+                />
+                <div className="text-left min-w-0">
+                  <div className="font-bold text-sm truncate">{currentUser.displayName}</div>
+                  <div className="text-xs opacity-75 truncate">@{currentUser.username} • {currentUser.email}</div>
+                </div>
+              </div>
+              <p className="text-xs opacity-80 leading-relaxed">
+                You are currently signed in. To change user, please sign out first.
+              </p>
+              <div className="flex items-center justify-center gap-2.5 pt-1">
+                <Link
+                  to={currentUser.role === 'admin' || currentUser.role === 'super_admin' ? '/admin' : '/dashboard'}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-950 transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  Go to Dashboard
+                </Link>
+                {onSignOut && (
+                  <button
+                    type="button"
+                    onClick={onSignOut}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 transition-colors"
+                  >
+                    Sign Out Completely
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <div>
             <h1 className="font-editorial text-3xl sm:text-4xl font-bold tracking-tight">
               {isRegister ? 'Create your account' : 'Welcome back'}
@@ -288,7 +345,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <div className="relative group">
                     <Mail
                       className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors ${
-                        isDark ? 'text-slate-200 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
+                        isDark ? 'text-slate-400 group-focus-within:text-sky-400' : 'text-slate-400 group-focus-within:text-sky-600'
                       }`}
                     />
                     <input
@@ -302,7 +359,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       placeholder="Enter your email or @username"
                       className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
                         isDark
-                          ? 'bg-slate-900 text-white border border-slate-700 focus:border-sky-400 placeholder:text-slate-400'
+                          ? 'bg-slate-900 text-white border border-slate-700 focus:border-sky-400 placeholder:text-slate-500'
                           : 'bg-white text-slate-900 border border-slate-300 focus:border-sky-500 placeholder:text-slate-400 shadow-sm'
                       }`}
                     />
@@ -316,7 +373,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <div className="relative group">
                     <Lock
                       className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none transition-colors ${
-                        isDark ? 'text-slate-200 group-focus-within:text-sky-400' : 'text-slate-500 group-focus-within:text-sky-600'
+                        isDark ? 'text-slate-400 group-focus-within:text-sky-400' : 'text-slate-400 group-focus-within:text-sky-600'
                       }`}
                     />
                     <input

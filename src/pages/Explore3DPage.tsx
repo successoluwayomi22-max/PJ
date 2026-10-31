@@ -411,19 +411,7 @@ export const Explore3DPage: React.FC<Explore3DPageProps> = ({
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={async () => {
-                            if (navigator.share) {
-                              try {
-                                await navigator.share({
-                                  title: post.headline,
-                                  text: post.bodyText.slice(0, 100),
-                                  url: shareUrl,
-                                });
-                                return;
-                              } catch {
-                                // fallback to menu
-                              }
-                            }
+                          onClick={() => {
                             setOpenSharePostId(openSharePostId === post.id ? null : post.id);
                           }}
                           className={`p-1.5 rounded-full transition-colors ${

@@ -377,6 +377,7 @@ export function normalizeRole(role: string | undefined): SystemRole {
   if (!role) return 'guest';
   if (role === 'user') return 'reader';
   if (role === 'moderator') return 'editor';
+  if (role === 'journalist') return 'author';
   const match = SYSTEM_ROLES.find((r) => r.id === role || r.name === role);
   return (match?.id as SystemRole) || (role as SystemRole);
 }

@@ -2,6 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import os from 'node:os';
+import { handleApiRequest } from './server/routes.ts';
+import { seedDatabase } from './server/seed.ts';
+
+// Seed initial persistent SQLite database if empty
+seedDatabase();
 
 interface TelemetryLog {
   id: string;
@@ -50,8 +55,21 @@ export default defineConfig({
     react(),
     tailwindcss(),
     {
-      name: 'pulse-telemetry-server',
+      name: 'pulse-api-and-telemetry-server',
       configureServer(server) {
+        // Real Enterprise SQLite REST API & Dynamic SEO handler
+        server.middlewares.use(async (req, res, next) => {
+          try {
+            const handled = await handleApiRequest(req, res);
+            if (!handled) {
+              next();
+            }
+          } catch (err) {
+            console.error('[API Middleware Error]', err);
+            next();
+          }
+        });
+
         server.middlewares.use('/api/telemetry', (req, res, next) => {
           if (req.method === 'GET') {
             const start = performance.now();

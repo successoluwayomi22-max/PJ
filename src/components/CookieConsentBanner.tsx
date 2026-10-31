@@ -246,25 +246,9 @@ export const CookieConsentBanner: React.FC<{
     );
   }
 
-  // Persistent floating trigger pill when consent has already been given (hidden on auth pages and positioned bottom-right)
+  // When consent has already been given, settings are accessible cleanly via the footer link "Cookie Settings" or Privacy Policy page
   if (hasConsented) {
-    if (isAuthPage) return null;
-    return (
-      <button
-        type="button"
-        onClick={() => setIsCustomizeOpen(true)}
-        className={`fixed bottom-4 right-4 z-40 p-2.5 rounded-full shadow-lg backdrop-blur-md opacity-80 hover:opacity-100 transition-all flex items-center gap-2 text-xs font-medium ${
-          isDark
-            ? 'bg-slate-900/90 text-slate-200 border border-slate-700/80 hover:bg-slate-800'
-            : 'bg-white/95 text-slate-800 border border-slate-300 shadow-md hover:bg-slate-50'
-        }`}
-        title="Manage Cookie &amp; Privacy Preferences"
-        aria-label="Manage Cookie Settings"
-      >
-        <Cookie className="w-4 h-4 text-amber-400" />
-        <span className="hidden sm:inline text-[11px]">Cookie Settings</span>
-      </button>
-    );
+    return null;
   }
 
   // Initial Banner Display

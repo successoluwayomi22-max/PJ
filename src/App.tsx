@@ -83,6 +83,7 @@ import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
 import { AccountSettingsModal } from './components/AccountSettingsModal';
+import { api } from './services/api';
 
 const STORAGE_KEY = 'pulse_news_mature_v5';
 
@@ -863,6 +864,9 @@ export function App() {
           : u
       )
     );
+
+    // Persist to backend API
+    api.toggleFollow(targetUserId).catch(() => {});
 
     const name = targetUser?.displayName || targetUser?.username || 'Correspondent';
     setFollowToast(nextFollowing ? `Following ${name}` : `Unfollowed ${name}`);
@@ -2134,14 +2138,19 @@ export function App() {
 
                               <button
                                 type="button"
-                                onClick={() => handleToggleFollow(u.id)}
-                                className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors shrink-0 ${
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleToggleFollow(u.id);
+                                }}
+                                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all shrink-0 active:scale-95 ${
                                   isFollowing
-                                    ? 'border border-slate-500/30 opacity-75 hover:opacity-100'
+                                    ? 'border border-slate-500/40 text-emerald-400 bg-emerald-500/10 hover:border-rose-500/40 hover:bg-rose-500/10 hover:text-rose-400'
                                     : isDark
-                                    ? 'bg-white text-slate-950 hover:bg-slate-200'
-                                    : 'bg-slate-900 text-white hover:bg-slate-800'
+                                    ? 'bg-white text-slate-950 hover:bg-slate-200 shadow-sm'
+                                    : 'bg-slate-900 text-white hover:bg-slate-800 shadow-sm'
                                 }`}
+                                title={isFollowing ? 'Click to Unfollow' : 'Click to Follow'}
                               >
                                 {isFollowing ? 'Following' : 'Follow'}
                               </button>
@@ -2386,6 +2395,7 @@ export function App() {
                 setUsers((prev) => [newU, ...prev]);
                 setCurrentUserId(newU.id);
               }}
+              onSignOut={handleSignOut}
             />
           }
         />
@@ -2403,6 +2413,7 @@ export function App() {
                 setUsers((prev) => [newU, ...prev]);
                 setCurrentUserId(newU.id);
               }}
+              onSignOut={handleSignOut}
             />
           }
         />

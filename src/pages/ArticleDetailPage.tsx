@@ -442,19 +442,7 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
                   <div className="relative">
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (navigator.share) {
-                          try {
-                            await navigator.share({
-                              title: post.headline,
-                              text: post.bodyText.slice(0, 100),
-                              url: window.location.href,
-                            });
-                            return;
-                          } catch {
-                            // fallback to popover menu
-                          }
-                        }
+                      onClick={() => {
                         setShowShareMenu((v) => !v);
                       }}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-slate-500/25 hover:bg-slate-500/10"

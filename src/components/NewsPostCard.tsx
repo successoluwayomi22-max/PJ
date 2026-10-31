@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Bookmark,
@@ -135,9 +135,11 @@ export const NewsPostCard: React.FC<NewsPostCardProps> = ({
     setTimeout(() => setActionToast(null), 1500);
   };
 
+  const repostPopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggerRepostUndoPopup = () => {
+    if (repostPopTimerRef.current) clearTimeout(repostPopTimerRef.current);
     setShowRepostUndoPop(true);
-    setTimeout(() => {
+    repostPopTimerRef.current = setTimeout(() => {
       setShowRepostUndoPop(false);
     }, 1500);
   };
@@ -333,20 +335,22 @@ export const NewsPostCard: React.FC<NewsPostCardProps> = ({
       )}
 
       {/* 1.5s Pop Notification when Reposted (with Undo Repost button) */}
-      {showRepostUndoPop && isReposted && (
-        <div className="absolute top-3.5 right-14 z-30 px-3.5 py-2 rounded-xl bg-slate-900/95 text-white border border-emerald-500/40 shadow-2xl flex items-center gap-3 text-xs animate-in fade-in duration-150">
+      {showRepostUndoPop && (
+        <div className="absolute top-3.5 right-4 sm:right-14 z-40 px-3.5 py-2 rounded-xl bg-slate-900/95 text-white border border-emerald-500/50 shadow-2xl flex items-center gap-3 text-xs animate-in fade-in duration-150">
           <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
             <Repeat2 className="w-3.5 h-3.5" />
             <span>Reposted story (@{currentUser.username})</span>
           </span>
           <button
             type="button"
-            onClick={() => {
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
               onRepost(post.id);
               setShowRepostUndoPop(false);
               triggerToast('Removed Repost');
             }}
-            className="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-semibold hover:opacity-90 transition-opacity"
+            className="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-semibold hover:bg-emerald-400 transition-colors shadow-sm"
           >
             Undo Repost
           </button>
@@ -882,20 +886,7 @@ export const NewsPostCard: React.FC<NewsPostCardProps> = ({
             <div className="relative">
               <button
                 type="button"
-                onClick={async () => {
-                  const shareUrl = `${window.location.origin}/article/${post.id}`;
-                  if (navigator.share) {
-                    try {
-                      await navigator.share({
-                        title: post.headline,
-                        text: post.bodyText.slice(0, 100),
-                        url: shareUrl,
-                      });
-                      return;
-                    } catch {
-                      // fallback to popover menu
-                    }
-                  }
+                onClick={() => {
                   setShowShareMenu((v) => !v);
                   setShowDownloadMenu(false);
                 }}
