@@ -1,43 +1,76 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
+  ArrowLeft,
   ArrowUpRight,
   Bookmark,
   Check,
   Clock,
+  Download,
+  ExternalLink,
   Film,
   Heart,
+  Link2,
+  Mail,
   MapPin,
   MessageCircle,
   Play,
+  Repeat2,
+  Send,
+  Share2,
   TrendingUp,
 } from 'lucide-react';
-import { NewsPost, PostCategory, User } from '../types';
+import { CommentItem, NewsPost, PostCategory, User } from '../types';
 
 interface Explore3DPageProps {
   posts: NewsPost[];
   users: User[];
+  comments?: CommentItem[];
   primaryColor: string;
   breakingColor: string;
   cardBgColor: string;
   isDark: boolean;
   bookmarkedIds?: string[];
+  likedIds?: string[];
+  repostedIds?: string[];
   onToggleBookmark?: (postId: string) => void;
+  onLike?: (postId: string) => void;
+  onRepost?: (postId: string) => void;
+  onAddComment?: (postId: string, content: string) => void;
 }
 
 export const Explore3DPage: React.FC<Explore3DPageProps> = ({
   posts,
   users,
+  comments = [],
   primaryColor,
   cardBgColor,
   isDark,
   bookmarkedIds = [],
+  likedIds = [],
+  repostedIds = [],
   onToggleBookmark,
+  onLike,
+  onRepost,
+  onAddComment,
 }) => {
+  const navigate = useNavigate();
   const published = posts.filter((p) => p.status !== 'draft' && p.status !== 'removed');
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'video' | PostCategory>('all');
   const [featuredIdx, setFeaturedIdx] = useState(0);
   const [pollVoted, setPollVoted] = useState<number | null>(null);
+  const [openCommentsPostId, setOpenCommentsPostId] = useState<string | null>(null);
+  const [openSharePostId, setOpenSharePostId] = useState<string | null>(null);
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
+  const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
+  const [repostPopPostId, setRepostPopPostId] = useState<string | null>(null);
+
+  const triggerRepostPop = (postId: string) => {
+    setRepostPopPostId(postId);
+    setTimeout(() => {
+      setRepostPopPostId((prev) => (prev === postId ? null : prev));
+    }, 1500);
+  };
 
   const featuredPosts = published.slice(0, 3);
   const activeHero = featuredPosts[featuredIdx] || published[0];
@@ -50,7 +83,18 @@ export const Explore3DPage: React.FC<Explore3DPageProps> = ({
   });
 
   return (
-    <div className="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 space-y-8">
+    <div className="max-w-[1360px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 space-y-6">
+      <div className="flex items-center justify-between pb-1">
+        <button
+          type="button"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back</span>
+        </button>
+      </div>
+
       {/* 1. IMMERSIVE FULL-BLEED EDITORIAL SPOTLIGHT HERO */}
       {activeHero && (
         <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-slate-950 text-white min-h-[440px] flex flex-col justify-end shadow-xl group">
@@ -162,22 +206,100 @@ export const Explore3DPage: React.FC<Explore3DPageProps> = ({
             const author = users.find((u) => u.id === post.authorId);
             const hasVideo = post.media.some((m) => m.type === 'video');
             const isSaved = bookmarkedIds.includes(post.id);
+            const isLiked = likedIds.includes(post.id);
+            const isReposted = repostedIds.includes(post.id);
+            const postComments = comments.filter((c) => c.postId === post.id);
+            const isCommentsOpen = openCommentsPostId === post.id;
+
+            const handleDownloadPost = () => {
+              const reportText = [
+                '====================================================================',
+                `PULSE NEWS REPORT — ${post.headline.toUpperCase()}`,
+                '====================================================================',
+                `Author: ${author?.displayName || 'Correspondent'} (@${author?.username || 'reporter'})`,
+                `Location: ${post.locationName}`,
+                `Published: ${new Date(post.createdAt).toLocaleString()}`,
+                '',
+                post.bodyText,
+                '',
+                `--- COMMENTS (${postComments.length}) ---`,
+                ...postComments.map((c) => {
+                  const cAuthor = users.find((u) => u.id === c.authorId);
+                  return `• ${cAuthor?.displayName || 'Reader'}: ${c.content}`;
+                }),
+              ].join('\n');
+
+              const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `pulse-news-${post.id}.txt`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            };
+
+            const shareUrl = `${window.location.origin}/article/${post.id}`;
+
+            const handleCopyShareLink = () => {
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(shareUrl);
+              } else {
+                const textArea = document.createElement('textarea');
+                textArea.value = shareUrl;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+              }
+              setCopiedPostId(post.id);
+              setOpenSharePostId(null);
+              setTimeout(() => setCopiedPostId(null), 1500);
+            };
 
             return (
               <article
                 key={post.id}
                 style={{ backgroundColor: cardBgColor }}
-                className={`rounded-2xl border overflow-hidden flex flex-col justify-between transition-colors ${
+                className={`relative rounded-2xl border flex flex-col justify-between transition-colors ${
                   isDark
                     ? 'border-white/[0.08] hover:border-white/[0.16]'
                     : 'border-black/[0.08] hover:border-black/[0.16] shadow-sm'
                 }`}
               >
+                {/* 1.5s Pop Notification with Undo Repost */}
+                {repostPopPostId === post.id && (
+                  <div className="absolute top-3 right-3 z-30 px-3.5 py-2 rounded-xl bg-slate-900/95 text-white border border-emerald-500/40 shadow-xl flex items-center gap-3 text-xs animate-in fade-in duration-150">
+                    <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+                      <Repeat2 className="w-3.5 h-3.5" /> Reposted story
+                    </span>
+                    {onRepost && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onRepost(post.id);
+                          setRepostPopPostId(null);
+                        }}
+                        className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white font-semibold"
+                      >
+                        Undo Repost
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {copiedPostId === post.id && (
+                  <div className="absolute top-3 right-3 z-30 px-3.5 py-1.5 rounded-full bg-emerald-500 text-slate-950 text-xs font-semibold shadow-lg flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5" /> Link copied to clipboard
+                  </div>
+                )}
+
                 <div>
                   {post.media[0] && (
                     <Link
                       to={`/article/${post.id}`}
-                      className="block relative h-52 overflow-hidden bg-black"
+                      className="block relative h-52 rounded-t-2xl overflow-hidden bg-black"
                     >
                       <img
                         src={post.media[0].thumbnailUrl || post.media[0].url}
@@ -212,40 +334,282 @@ export const Explore3DPage: React.FC<Explore3DPageProps> = ({
                   </div>
                 </div>
 
-                <div
-                  className={`px-5 py-3.5 border-t flex items-center justify-between text-xs ${
-                    isDark ? 'border-white/[0.06]' : 'border-black/[0.06]'
-                  }`}
-                >
-                  <Link
-                    to={`/profile/${author?.username || 'reporter'}`}
-                    className="flex items-center gap-2 truncate"
+                <div>
+                  <div
+                    className={`px-5 py-3.5 border-t flex items-center justify-between gap-2 text-xs ${
+                      isDark ? 'border-white/[0.06]' : 'border-black/[0.06]'
+                    }`}
                   >
-                    <img
-                      src={author?.avatarUrl}
-                      alt={author?.displayName}
-                      className="w-6 h-6 rounded-full object-cover"
-                    />
-                    <span className="font-medium truncate">{author?.displayName}</span>
-                  </Link>
+                    <Link
+                      to={`/profile/${author?.username || 'reporter'}`}
+                      className="flex items-center gap-2 truncate min-w-0"
+                    >
+                      <img
+                        src={author?.avatarUrl}
+                        alt={author?.displayName}
+                        className="w-6 h-6 rounded-full object-cover shrink-0"
+                      />
+                      <span className="font-medium truncate">{author?.displayName}</span>
+                    </Link>
 
-                  <div className="flex items-center gap-3 opacity-70">
-                    <span className="inline-flex items-center gap-1">
-                      <Heart className="w-3.5 h-3.5" /> {post.upvotes}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <MessageCircle className="w-3.5 h-3.5" /> {post.commentCount}
-                    </span>
-                    {onToggleBookmark && (
+                    <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+                      {/* LIKE / UNLIKE BUTTON */}
                       <button
                         type="button"
-                        onClick={() => onToggleBookmark(post.id)}
-                        className={isSaved ? 'text-sky-400' : 'hover:opacity-100'}
+                        onClick={() => onLike?.(post.id)}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full transition-colors ${
+                          isLiked
+                            ? 'text-rose-500 bg-rose-500/10 font-semibold'
+                            : 'opacity-75 hover:opacity-100 hover:bg-slate-500/10'
+                        }`}
+                        title={isLiked ? 'Unlike story' : 'Like story'}
                       >
-                        <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-current' : ''}`} />
+                        <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-current' : ''}`} />
+                        <span>{post.upvotes}</span>
                       </button>
-                    )}
+
+                      {/* COMMENTS DRAWER TOGGLE BUTTON */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenCommentsPostId(isCommentsOpen ? null : post.id)
+                        }
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full transition-colors ${
+                          isCommentsOpen
+                            ? 'text-sky-400 bg-sky-500/10 font-semibold'
+                            : 'opacity-75 hover:opacity-100 hover:bg-slate-500/10'
+                        }`}
+                        title="Read & write comments"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>{Math.max(post.commentCount, postComments.length)}</span>
+                      </button>
+
+                      {/* REPOST / UNREPOST BUTTON */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const wasReposted = isReposted;
+                          onRepost?.(post.id);
+                          if (!wasReposted) {
+                            triggerRepostPop(post.id);
+                          } else {
+                            setRepostPopPostId(null);
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full transition-colors ${
+                          isReposted
+                            ? 'text-emerald-400 bg-emerald-500/10 font-semibold'
+                            : 'opacity-75 hover:opacity-100 hover:bg-slate-500/10'
+                        }`}
+                        title={isReposted ? 'Undo Repost' : 'Repost story'}
+                      >
+                        <Repeat2 className="w-3.5 h-3.5" />
+                        <span>{post.shareCount}</span>
+                      </button>
+
+                      {/* DOWNLOAD BUTTON */}
+                      <button
+                        type="button"
+                        onClick={handleDownloadPost}
+                        className="p-1.5 rounded-full opacity-75 hover:opacity-100 hover:bg-slate-500/10 transition-colors"
+                        title="Download report (.txt)"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* SHARE MENU BUTTON & POPOVER */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenSharePostId(openSharePostId === post.id ? null : post.id)
+                          }
+                          className={`p-1.5 rounded-full transition-colors ${
+                            openSharePostId === post.id || copiedPostId === post.id
+                              ? 'text-sky-400 bg-sky-500/10'
+                              : 'opacity-75 hover:opacity-100 hover:bg-slate-500/10'
+                          }`}
+                          title="Share story"
+                        >
+                          {copiedPostId === post.id ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Share2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
+                        {openSharePostId === post.id && (
+                          <div
+                            style={{ backgroundColor: cardBgColor }}
+                            className={`absolute right-0 bottom-9 w-56 rounded-2xl border p-1.5 shadow-2xl z-40 text-xs space-y-0.5 ${
+                              isDark ? 'border-white/15' : 'border-black/15'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={handleCopyShareLink}
+                              className="w-full px-3 py-2 rounded-xl text-left flex items-center gap-2.5 hover:bg-slate-500/10 font-medium"
+                            >
+                              <Link2 className="w-3.5 h-3.5 text-sky-400" />
+                              <span>Copy Story Link</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const wasReposted = isReposted;
+                                onRepost?.(post.id);
+                                if (!wasReposted) triggerRepostPop(post.id);
+                                setOpenSharePostId(null);
+                              }}
+                              className="w-full px-3 py-2 rounded-xl text-left flex items-center gap-2.5 hover:bg-slate-500/10 font-medium"
+                            >
+                              <Repeat2 className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>{isReposted ? 'Undo Repost' : 'Repost to Feed'}</span>
+                            </button>
+                            <a
+                              href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
+                                post.headline
+                              )}&url=${encodeURIComponent(shareUrl)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={() => setOpenSharePostId(null)}
+                              className="w-full px-3 py-2 rounded-xl text-left flex items-center gap-2.5 hover:bg-slate-500/10 font-medium"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                              <span>Share on X / Twitter</span>
+                            </a>
+                            <a
+                              href={`https://wa.me/?text=${encodeURIComponent(
+                                `${post.headline} — ${shareUrl}`
+                              )}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={() => setOpenSharePostId(null)}
+                              className="w-full px-3 py-2 rounded-xl text-left flex items-center gap-2.5 hover:bg-slate-500/10 font-medium"
+                            >
+                              <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Share on WhatsApp</span>
+                            </a>
+                            <a
+                              href={`mailto:?subject=${encodeURIComponent(
+                                post.headline
+                              )}&body=${encodeURIComponent(
+                                `${post.headline}\n\n${post.bodyText}\n\nRead full story: ${shareUrl}`
+                              )}`}
+                              onClick={() => setOpenSharePostId(null)}
+                              className="w-full px-3 py-2 rounded-xl text-left flex items-center gap-2.5 hover:bg-slate-500/10 font-medium"
+                            >
+                              <Mail className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Share via Email</span>
+                            </a>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* SAVE / BOOKMARK BUTTON */}
+                      {onToggleBookmark && (
+                        <button
+                          type="button"
+                          onClick={() => onToggleBookmark(post.id)}
+                          className={`p-1.5 rounded-full transition-colors ${
+                            isSaved
+                              ? 'text-sky-400 bg-sky-500/10'
+                              : 'opacity-75 hover:opacity-100 hover:bg-slate-500/10'
+                          }`}
+                          title={isSaved ? 'Remove from Bookmarks' : 'Save to Bookmarks'}
+                        >
+                          <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-current' : ''}`} />
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {/* INLINE COMMENTS DRAWER ON EXPLORE CARD */}
+                  {isCommentsOpen && (
+                    <div
+                      className={`px-5 py-4 border-t space-y-3 text-xs ${
+                        isDark
+                          ? 'border-white/[0.06] bg-white/[0.02]'
+                          : 'border-black/[0.06] bg-slate-500/[0.03]'
+                      }`}
+                    >
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const text = (commentInputs[post.id] || '').trim();
+                          if (!text || !onAddComment) return;
+                          onAddComment(post.id, text);
+                          setCommentInputs((prev) => ({ ...prev, [post.id]: '' }));
+                        }}
+                        className="flex items-center gap-2"
+                      >
+                        <input
+                          type="text"
+                          value={commentInputs[post.id] || ''}
+                          onChange={(e) =>
+                            setCommentInputs((prev) => ({
+                              ...prev,
+                              [post.id]: e.target.value,
+                            }))
+                          }
+                          placeholder="Write a comment..."
+                          className={`flex-1 px-3 py-2 rounded-xl border text-xs focus:outline-none ${
+                            isDark
+                              ? 'bg-slate-900 border-white/10 text-white'
+                              : 'bg-white border-black/10 text-slate-900'
+                          }`}
+                        />
+                        <button
+                          type="submit"
+                          className="px-3 py-2 rounded-xl font-semibold text-slate-950 inline-flex items-center gap-1"
+                          style={{ backgroundColor: primaryColor }}
+                        >
+                          <Send className="w-3 h-3" /> Post
+                        </button>
+                      </form>
+
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {postComments.length === 0 ? (
+                          <div className="opacity-60 py-2 text-center">
+                            No comments yet. Be the first to share your perspective!
+                          </div>
+                        ) : (
+                          postComments.map((c) => {
+                            const cUser = users.find((u) => u.id === c.authorId);
+                            return (
+                              <div
+                                key={c.id}
+                                className={`p-2.5 rounded-xl border ${
+                                  isDark
+                                    ? 'border-white/[0.06] bg-white/[0.02]'
+                                    : 'border-black/[0.06] bg-white'
+                                }`}
+                              >
+                                <div className="font-semibold text-[11px]">
+                                  {cUser?.displayName || 'Reader'}{' '}
+                                  <span className="opacity-50 font-normal">
+                                    @{cUser?.username || 'reader'}
+                                  </span>
+                                </div>
+                                <p className="opacity-85 mt-0.5 leading-relaxed">{c.content}</p>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      <div className="flex justify-end">
+                        <Link
+                          to={`/article/${post.id}`}
+                          className="text-[11px] font-semibold hover:underline"
+                          style={{ color: primaryColor }}
+                        >
+                          Open full article & thread →
+                        </Link>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </article>
             );

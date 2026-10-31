@@ -9,12 +9,12 @@ export interface LanguageMeta {
 }
 
 export const LANGUAGES: LanguageMeta[] = [
-  { code: 'en', name: 'English', nativeName: 'English', flag: '🇺🇸', dir: 'ltr' },
-  { code: 'es', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸', dir: 'ltr' },
-  { code: 'fr', name: 'French', nativeName: 'Français', flag: '🇫🇷', dir: 'ltr' },
-  { code: 'ar', name: 'Arabic', nativeName: 'العربية', flag: '🇸🇦', dir: 'rtl' },
-  { code: 'zh', name: 'Chinese', nativeName: '中文', flag: '🇨🇳', dir: 'ltr' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本語', flag: '🇯🇵', dir: 'ltr' },
+  { code: 'en', name: 'English', nativeName: 'English', flag: 'EN', dir: 'ltr' },
+  { code: 'es', name: 'Spanish', nativeName: 'Español', flag: 'ES', dir: 'ltr' },
+  { code: 'fr', name: 'French', nativeName: 'Français', flag: 'FR', dir: 'ltr' },
+  { code: 'ar', name: 'Arabic', nativeName: 'العربية', flag: 'AR', dir: 'rtl' },
+  { code: 'zh', name: 'Chinese', nativeName: '中文', flag: 'ZH', dir: 'ltr' },
+  { code: 'ja', name: 'Japanese', nativeName: '日本語', flag: 'JA', dir: 'ltr' },
 ];
 
 export const UI_STRINGS: Record<

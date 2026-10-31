@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Link,
+  Navigate,
   Route,
   Routes,
   useLocation,
@@ -8,9 +9,11 @@ import {
 } from 'react-router-dom';
 import {
   Activity,
+  ArrowLeft,
   Atom,
   Bell,
   Bookmark,
+  Camera,
   Check,
   Compass,
   Feather,
@@ -49,7 +52,7 @@ import {
 } from './types';
 import {
   computePostRankScore,
-  DEFAULT_SITE_SETTINGS,
+  INITIAL_SITE_SETTINGS,
   INITIAL_AUDIT_LOGS,
   INITIAL_COMMENTS,
   INITIAL_COMMUNITY_NOTES,
@@ -65,10 +68,63 @@ import { CreatePostPage } from './pages/CreatePostPage';
 import { Explore3DPage } from './pages/Explore3DPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AuthPage } from './pages/AuthPage';
-import { NotificationsPage } from './pages/NotificationsPage';
+import { NotificationItem, NotificationsPage } from './pages/NotificationsPage';
 import { BookmarksPage } from './pages/BookmarksPage';
+import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
+import { NotFoundPage } from './pages/NotFoundPage';
+import { CookieConsentBanner } from './components/CookieConsentBanner';
 
-const STORAGE_KEY = 'pulse_news_mature_v4';
+const STORAGE_KEY = 'pulse_news_mature_v5';
+
+const INITIAL_NOTIFICATIONS: NotificationItem[] = [
+  {
+    id: 'n-1',
+    type: 'repost',
+    actorId: 'user-kenji',
+    postId: 'post-1',
+    time: '12m ago',
+    text: 'reposted your coverage and added field commentary from Tokyo Bureau.',
+  },
+  {
+    id: 'n-2',
+    type: 'comment',
+    actorId: 'user-amina',
+    postId: 'post-3',
+    time: '38m ago',
+    text: 'replied to your report: "Battery reserve telemetry in Yaba held at 99.4% stability overnight."',
+  },
+  {
+    id: 'n-3',
+    type: 'verified',
+    actorId: 'user-marcus',
+    postId: 'post-2',
+    time: '1h ago',
+    text: 'confirmed C2PA hardware signature on your dispatch (#98.4% authenticity).',
+  },
+  {
+    id: 'n-4',
+    type: 'like',
+    actorId: 'user-claire',
+    postId: 'post-4',
+    time: '2h ago',
+    text: 'and 42 other correspondents recommended your dispatch.',
+  },
+  {
+    id: 'n-5',
+    type: 'follow',
+    actorId: 'user-rafael',
+    time: '4h ago',
+    text: 'followed your investigative desk from São Paulo.',
+  },
+  {
+    id: 'n-6',
+    type: 'like',
+    actorId: 'user-kenji',
+    postId: 'post-5',
+    time: '6h ago',
+    text: 'recommended your report on European Quantum Photonic Interconnect.',
+  },
+];
 
 export function App() {
   const location = useLocation();
@@ -78,9 +134,9 @@ export function App() {
   const [settings, setSettings] = useState<SiteSettings>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_settings`);
-      return saved ? JSON.parse(saved) : DEFAULT_SITE_SETTINGS;
+      return saved ? JSON.parse(saved) : INITIAL_SITE_SETTINGS;
     } catch {
-      return DEFAULT_SITE_SETTINGS;
+      return INITIAL_SITE_SETTINGS;
     }
   });
 
@@ -129,19 +185,108 @@ export function App() {
     }
   });
 
-  const [currentUserId, setCurrentUserId] = useState<string>('user-elena');
+  const [currentUserId, setCurrentUserId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_current_user_id`);
+      return saved && saved !== 'user-elena' ? saved : 'user-kenji';
+    } catch {
+      return 'user-kenji';
+    }
+  });
   const [lang, setLang] = useState<LanguageCode>('en');
   const [feedTab, setFeedTab] = useState<'for_you' | 'following' | 'breaking' | 'tech' | 'world'>('for_you');
   const [selectedCategory, setSelectedCategory] = useState<'all' | PostCategory>('all');
   const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [commandOpen, setCommandOpen] = useState(false);
 
-  // Social interactions state
-  const [bookmarkedIds, setBookmarkedIds] = useState<string[]>(['post-tokyo-grid']);
-  const [likedIds, setLikedIds] = useState<string[]>(['post-tokyo-grid']);
-  const [repostedIds, setRepostedIds] = useState<string[]>([]);
-  const [followedUserIds, setFollowedUserIds] = useState<string[]>(['user-kenji', 'user-amara']);
+  // Debounce search query (250ms) so typing in the search input never triggers per-keystroke feed re-ranking
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Social interactions state (persisted in localStorage)
+  const [bookmarkedIds, setBookmarkedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_bookmarks`);
+      return saved ? JSON.parse(saved) : ['post-1'];
+    } catch {
+      return ['post-1'];
+    }
+  });
+  const [seenBookmarkIds, setSeenBookmarkIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_seen_bookmarks`);
+      if (saved) return JSON.parse(saved);
+      const existingBookmarks = localStorage.getItem(`${STORAGE_KEY}_bookmarks`);
+      return existingBookmarks ? JSON.parse(existingBookmarks) : ['post-1'];
+    } catch {
+      return ['post-1'];
+    }
+  });
+  const unseenBookmarksCount = useMemo(
+    () => bookmarkedIds.filter((id) => !seenBookmarkIds.includes(id)).length,
+    [bookmarkedIds, seenBookmarkIds]
+  );
+  const [likedIds, setLikedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_likes`);
+      return saved ? JSON.parse(saved) : ['post-1'];
+    } catch {
+      return ['post-1'];
+    }
+  });
+  const [dislikedIds, setDislikedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_dislikes`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [repostedIds, setRepostedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_reposts`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [likedCommentIds, setLikedCommentIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_liked_comments`);
+      return saved ? JSON.parse(saved) : ['c-1'];
+    } catch {
+      return ['c-1'];
+    }
+  });
+  const [notifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_read_notifications`);
+      return saved ? JSON.parse(saved) : ['n-4', 'n-5', 'n-6'];
+    } catch {
+      return ['n-4', 'n-5', 'n-6'];
+    }
+  });
+  const unreadNotificationsCount = useMemo(
+    () => notifications.filter((n) => !readNotificationIds.includes(n.id)).length,
+    [notifications, readNotificationIds]
+  );
+  const [followedUserIds, setFollowedUserIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_followed_users`);
+      return saved ? JSON.parse(saved) : ['user-kenji', 'user-amina'];
+    } catch {
+      return ['user-kenji', 'user-amina'];
+    }
+  });
+  const [followToast, setFollowToast] = useState<string | null>(null);
+  const followToastTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
 
   // Inline Home Quick-Post Composer state
@@ -153,6 +298,19 @@ export function App() {
   const [quickMediaType, setQuickMediaType] = useState<'image' | 'video'>('image');
   const [quickComposerExpanded, setQuickComposerExpanded] = useState(false);
   const quickFileInputRef = useRef<HTMLInputElement>(null);
+  const homeAvatarInputRef = useRef<HTMLInputElement>(null);
+
+  const handleHomeAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        handleUpdateUser(currentUser.id, { avatarUrl: reader.result });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Persistent Audio Mini-Player state
   const [audioPost, setAudioPost] = useState<NewsPost | null>(null);
@@ -161,25 +319,96 @@ export function App() {
 
   // Fullscreen Lightbox state
   const [lightboxMedia, setLightboxMedia] = useState<{ url: string; caption?: string } | null>(null);
+  const [cookieSettingsOpen, setCookieSettingsOpen] = useState(false);
 
   const currentUser = useMemo(
     () => users.find((u) => u.id === currentUserId) || users[0],
     [users, currentUserId]
   );
 
-  // Persist to localStorage
+  // Debounced persistence to localStorage (450ms) so UI updates never block the main thread
   useEffect(() => {
-    try {
-      localStorage.setItem(`${STORAGE_KEY}_settings`, JSON.stringify(settings));
-      localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users));
-      localStorage.setItem(`${STORAGE_KEY}_posts`, JSON.stringify(posts));
-      localStorage.setItem(`${STORAGE_KEY}_comments`, JSON.stringify(comments));
-      localStorage.setItem(`${STORAGE_KEY}_notes`, JSON.stringify(notes));
-      localStorage.setItem(`${STORAGE_KEY}_audit`, JSON.stringify(auditLogs));
-    } catch {
-      // ignore storage quota errors
+    const saveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_current_user_id`, currentUserId);
+        localStorage.setItem(`${STORAGE_KEY}_settings`, JSON.stringify(settings));
+        localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(users));
+        localStorage.setItem(`${STORAGE_KEY}_posts`, JSON.stringify(posts));
+        localStorage.setItem(`${STORAGE_KEY}_comments`, JSON.stringify(comments));
+        localStorage.setItem(`${STORAGE_KEY}_notes`, JSON.stringify(notes));
+        localStorage.setItem(`${STORAGE_KEY}_audit`, JSON.stringify(auditLogs));
+        localStorage.setItem(`${STORAGE_KEY}_bookmarks`, JSON.stringify(bookmarkedIds));
+        localStorage.setItem(`${STORAGE_KEY}_seen_bookmarks`, JSON.stringify(seenBookmarkIds));
+        localStorage.setItem(`${STORAGE_KEY}_likes`, JSON.stringify(likedIds));
+        localStorage.setItem(`${STORAGE_KEY}_dislikes`, JSON.stringify(dislikedIds));
+        localStorage.setItem(`${STORAGE_KEY}_reposts`, JSON.stringify(repostedIds));
+        localStorage.setItem(`${STORAGE_KEY}_liked_comments`, JSON.stringify(likedCommentIds));
+        localStorage.setItem(`${STORAGE_KEY}_followed_users`, JSON.stringify(followedUserIds));
+        localStorage.setItem(
+          `${STORAGE_KEY}_read_notifications`,
+          JSON.stringify(readNotificationIds)
+        );
+      } catch {
+        // ignore storage quota errors
+      }
+    }, 450);
+
+    return () => clearTimeout(saveTimer);
+  }, [
+    currentUserId,
+    settings,
+    users,
+    posts,
+    comments,
+    notes,
+    auditLogs,
+    bookmarkedIds,
+    seenBookmarkIds,
+    likedIds,
+    dislikedIds,
+    repostedIds,
+    likedCommentIds,
+    followedUserIds,
+    readNotificationIds,
+  ]);
+
+  // Always scroll to the very top of the page when navigating to a new route
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [location.pathname]);
+
+  // Automatically mark Notifications or Bookmarks as seen/read when the user visits those pages or articles
+  useEffect(() => {
+    if (location.pathname === '/bookmarks') {
+      setSeenBookmarkIds((prev) => {
+        const merged = Array.from(new Set([...prev, ...bookmarkedIds]));
+        return merged.length === prev.length ? prev : merged;
+      });
+    } else if (location.pathname === '/notifications') {
+      const allIds = notifications.map((n) => n.id);
+      setReadNotificationIds((prev) => {
+        const merged = Array.from(new Set([...prev, ...allIds]));
+        return merged.length === prev.length ? prev : merged;
+      });
+    } else if (location.pathname.startsWith('/article/')) {
+      const articleId = location.pathname.replace('/article/', '');
+      if (articleId) {
+        setSeenBookmarkIds((prev) =>
+          prev.includes(articleId) ? prev : [...prev, articleId]
+        );
+        const matchingNotifIds = notifications
+          .filter((n) => n.postId === articleId)
+          .map((n) => n.id);
+        if (matchingNotifIds.length > 0) {
+          setReadNotificationIds((prev) =>
+            Array.from(new Set([...prev, ...matchingNotifIds]))
+          );
+        }
+      }
     }
-  }, [settings, users, posts, comments, notes, auditLogs]);
+  }, [location.pathname, bookmarkedIds, notifications]);
 
   // Keyboard shortcut Cmd/Ctrl + K for instant search
   useEffect(() => {
@@ -207,15 +436,33 @@ export function App() {
 
   // Handlers
   const handleUpdateSettings = (next: SiteSettings, description: string) => {
-    const entry: AuditLogEntry = {
-      id: `audit-${Date.now()}`,
-      adminId: currentUser.id,
-      actionType: 'THEME_CHANGE',
-      description,
-      timestamp: new Date().toISOString(),
-      previousSettings: settings,
-    };
-    setAuditLogs((prev) => [entry, ...prev]);
+    const prefix = description.split('"')[0]?.split(' to ')[0]?.trim();
+    setAuditLogs((prev) => {
+      if (
+        prefix &&
+        prev[0] &&
+        prev[0].actionType === 'THEME_CHANGE' &&
+        prev[0].description.startsWith(prefix)
+      ) {
+        return [
+          {
+            ...prev[0],
+            description,
+            timestamp: new Date().toISOString(),
+          },
+          ...prev.slice(1, 50),
+        ];
+      }
+      const entry: AuditLogEntry = {
+        id: `audit-${Date.now()}`,
+        adminId: currentUser.id,
+        actionType: 'THEME_CHANGE',
+        description,
+        timestamp: new Date().toISOString(),
+        previousSettings: settings,
+      };
+      return [entry, ...prev.slice(0, 49)];
+    });
     setSettings(next);
   };
 
@@ -319,16 +566,80 @@ export function App() {
 
   const handleLike = (postId: string) => {
     const alreadyLiked = likedIds.includes(postId);
+    const wasDisliked = dislikedIds.includes(postId);
+
     setLikedIds((prev) =>
       alreadyLiked ? prev.filter((id) => id !== postId) : [...prev, postId]
     );
+    if (wasDisliked) {
+      setDislikedIds((prev) => prev.filter((id) => id !== postId));
+    }
+
     setPosts((prev) =>
       prev.map((p) =>
         p.id === postId
-          ? { ...p, upvotes: Math.max(0, p.upvotes + (alreadyLiked ? -1 : 1)) }
+          ? {
+              ...p,
+              upvotes: Math.max(0, p.upvotes + (alreadyLiked ? -1 : 1)),
+              downvotes: wasDisliked ? Math.max(0, p.downvotes - 1) : p.downvotes,
+            }
           : p
       )
     );
+  };
+
+  const handleDislike = (postId: string) => {
+    const alreadyDisliked = dislikedIds.includes(postId);
+    const wasLiked = likedIds.includes(postId);
+
+    setDislikedIds((prev) =>
+      alreadyDisliked ? prev.filter((id) => id !== postId) : [...prev, postId]
+    );
+    if (wasLiked) {
+      setLikedIds((prev) => prev.filter((id) => id !== postId));
+    }
+
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              downvotes: Math.max(0, p.downvotes + (alreadyDisliked ? -1 : 1)),
+              upvotes: wasLiked ? Math.max(0, p.upvotes - 1) : p.upvotes,
+            }
+          : p
+      )
+    );
+  };
+
+  const handleLikeComment = (commentId: string) => {
+    const alreadyLiked = likedCommentIds.includes(commentId);
+    setLikedCommentIds((prev) =>
+      alreadyLiked ? prev.filter((id) => id !== commentId) : [...prev, commentId]
+    );
+    setComments((prev) =>
+      prev.map((c) =>
+        c.id === commentId
+          ? { ...c, upvotes: Math.max(0, c.upvotes + (alreadyLiked ? -1 : 1)) }
+          : c
+      )
+    );
+  };
+
+  const handleDeleteComment = (commentId: string, postId: string) => {
+    setComments((prev) => {
+      const removedCount = prev.filter(
+        (c) => c.id === commentId || c.parentCommentId === commentId
+      ).length;
+      setPosts((postsPrev) =>
+        postsPrev.map((p) =>
+          p.id === postId
+            ? { ...p, commentCount: Math.max(0, p.commentCount - removedCount) }
+            : p
+        )
+      );
+      return prev.filter((c) => c.id !== commentId && c.parentCommentId !== commentId);
+    });
   };
 
   const handleRepost = (postId: string) => {
@@ -343,6 +654,134 @@ export function App() {
           : p
       )
     );
+  };
+
+  const handleToggleFollow = (targetUserId: string) => {
+    const targetUser = users.find((u) => u.id === targetUserId);
+    const isFollowing = followedUserIds.includes(targetUserId);
+    const nextFollowing = !isFollowing;
+
+    setFollowedUserIds((prev) =>
+      isFollowing ? prev.filter((id) => id !== targetUserId) : [...prev, targetUserId]
+    );
+
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === targetUserId
+          ? {
+              ...u,
+              followersCount: Math.max(0, (u.followersCount || 0) + (nextFollowing ? 1 : -1)),
+            }
+          : u
+      )
+    );
+
+    const name = targetUser?.displayName || targetUser?.username || 'Correspondent';
+    setFollowToast(nextFollowing ? `Following ${name}` : `Unfollowed ${name}`);
+    if (followToastTimerRef.current) clearTimeout(followToastTimerRef.current);
+    followToastTimerRef.current = setTimeout(() => {
+      setFollowToast(null);
+    }, 1500);
+  };
+
+  const handleDeleteAccount = (targetUserId: string, passwordVerification: string): boolean => {
+    const targetUser = users.find((u) => u.id === targetUserId);
+    if (!targetUser) return false;
+
+    if (targetUser.password && passwordVerification !== targetUser.password) {
+      return false;
+    }
+
+    // 1. Anonymize user dispatches to preserve historical record per GDPR / NDPA policy
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.authorId === targetUserId
+          ? {
+              ...p,
+              bodyText: `[Correspondent profile erased per privacy request] ${p.bodyText}`,
+            }
+          : p
+      )
+    );
+
+    // 2. Anonymize comments
+    setComments((prev) =>
+      prev.map((c) =>
+        c.authorId === targetUserId
+          ? { ...c, content: '[Comment removed by deleted user]' }
+          : c
+      )
+    );
+
+    // 3. Remove user from users state
+    setUsers((prev) => prev.filter((u) => u.id !== targetUserId));
+
+    // 4. Log administrative audit trail without personal information
+    handleUndoAuditLog(
+      'USER_ACCOUNT_DELETED_PER_GDPR_NDPA',
+      'users',
+      targetUserId,
+      `User account @${targetUser.username} was permanently erased per user erasure request.`
+    );
+
+    // 5. Select next fallback user if current user was deleted
+    const fallbackUser = users.find((u) => u.id !== targetUserId && u.id !== 'user-admin') || users[0];
+    setCurrentUserId(fallbackUser.id);
+    navigate('/');
+    setFollowToast('Account successfully deleted and personal data scrubbed.');
+    setTimeout(() => setFollowToast(null), 3000);
+
+    return true;
+  };
+
+  const handleQuoteRepost = (originalPost: NewsPost, quoteText: string) => {
+    const originalAuthor = users.find((u) => u.id === originalPost.authorId);
+    const quotedPost: NewsPost = {
+      id: `post-quote-${Date.now()}`,
+      authorId: currentUser.id,
+      headline: quoteText,
+      bodyText: `Quoted @${originalAuthor?.username || 'correspondent'} (${originalPost.locationName}): "${originalPost.headline}" — ${originalPost.bodyText}`,
+      aiSummary: [
+        `Quote repost by @${currentUser.username} referencing @${originalAuthor?.username || 'correspondent'}.`,
+        ...originalPost.aiSummary.slice(0, 1),
+      ],
+      category: originalPost.category,
+      status: 'published',
+      tags: [...originalPost.tags],
+      isEyewitness: false,
+      isBreakingPinned: false,
+      locationName: currentUser.location || originalPost.locationName,
+      latitude: originalPost.latitude,
+      longitude: originalPost.longitude,
+      privacyLevel: 'city',
+      media: originalPost.media,
+      upvotes: 1,
+      downvotes: 0,
+      commentCount: 0,
+      viewCount: 1,
+      shareCount: 1,
+      velocityPer15m: 24,
+      createdAt: new Date().toISOString(),
+      forensics: originalPost.forensics,
+    };
+
+    setPosts((prev) => [
+      quotedPost,
+      ...prev.map((p) =>
+        p.id === originalPost.id ? { ...p, shareCount: p.shareCount + 1 } : p
+      ),
+    ]);
+    setRepostedIds((prev) =>
+      prev.includes(originalPost.id) ? prev : [...prev, originalPost.id]
+    );
+  };
+
+  const handleMarkNotificationRead = (id: string) => {
+    setReadNotificationIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
+
+  const handleMarkAllNotificationsRead = () => {
+    setReadNotificationIds(notifications.map((n) => n.id));
   };
 
   const handleVote = (postId: string, dir: 'up' | 'down') => {
@@ -363,9 +802,15 @@ export function App() {
   };
 
   const handleToggleBookmark = (postId: string) => {
+    const isCurrentlyBookmarked = bookmarkedIds.includes(postId);
     setBookmarkedIds((prev) =>
-      prev.includes(postId) ? prev.filter((id) => id !== postId) : [...prev, postId]
+      isCurrentlyBookmarked ? prev.filter((id) => id !== postId) : [...prev, postId]
     );
+    if (isCurrentlyBookmarked) {
+      setSeenBookmarkIds((prev) => prev.filter((id) => id !== postId));
+    } else if (location.pathname === '/bookmarks') {
+      setSeenBookmarkIds((prev) => (prev.includes(postId) ? prev : [...prev, postId]));
+    }
   };
 
   const handleAddComment = (postId: string, content: string, parentCommentId: string | null = null) => {
@@ -494,8 +939,8 @@ export function App() {
         if (feedTab === 'world' && p.category !== 'politics' && p.category !== 'culture' && p.category !== 'business') {
           return false;
         }
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
+        if (debouncedSearchQuery.trim()) {
+          const q = debouncedSearchQuery.toLowerCase();
           return (
             p.headline.toLowerCase().includes(q) ||
             p.bodyText.toLowerCase().includes(q) ||
@@ -523,7 +968,7 @@ export function App() {
     feedTab,
     followedUserIds,
     currentUser.id,
-    searchQuery,
+    debouncedSearchQuery,
     users,
     settings.algorithm,
     notes,
@@ -579,17 +1024,25 @@ export function App() {
       >
         <div className="max-w-[1380px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           {/* Left: Brand Identity */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3 sm:gap-5">
             <Link to="/" className="flex items-center gap-3 group">
-              <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-colors ${
-                  isDark
-                    ? 'bg-white/[0.04] border-white/10 group-hover:border-white/25'
-                    : 'bg-slate-900/[0.04] border-black/10 group-hover:border-black/25'
-                }`}
-              >
-                {renderEmblem()}
-              </div>
+              {settings.logoUrl ? (
+                <img
+                  src={settings.logoUrl}
+                  alt={settings.siteName}
+                  className="w-9 h-9 rounded-xl object-cover border border-slate-500/20"
+                />
+              ) : (
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-colors ${
+                    isDark
+                      ? 'bg-white/[0.04] border-white/10 group-hover:border-white/25'
+                      : 'bg-slate-900/[0.04] border-black/10 group-hover:border-black/25'
+                  }`}
+                >
+                  {renderEmblem()}
+                </div>
+              )}
               <div>
                 <span className="font-editorial text-lg font-bold tracking-tight block leading-none">
                   {settings.siteName}
@@ -599,6 +1052,58 @@ export function App() {
                 </span>
               </div>
             </Link>
+
+            {/* Quick Global Navigation Links */}
+            <nav className="hidden xl:flex items-center gap-1 pl-2 border-l border-slate-500/15">
+              {[
+                { to: '/', label: 'Home', exact: true },
+                { to: '/explore', label: 'Explore' },
+                {
+                  to: '/notifications',
+                  label: 'Notifications',
+                  badge: unreadNotificationsCount > 0 ? unreadNotificationsCount : undefined,
+                },
+                {
+                  to: '/bookmarks',
+                  label: 'Bookmarks',
+                },
+                ...(currentUser.role === 'admin' ||
+                currentUser.verificationTier === 'journalist' ||
+                currentUser.role === 'moderator'
+                  ? [{ to: '/studio', label: 'Studio' }]
+                  : []),
+                ...(currentUser.role === 'admin'
+                  ? [{ to: '/admin', label: 'Admin' }]
+                  : []),
+              ].map((navItem) => {
+                const active = navItem.exact
+                  ? location.pathname === navItem.to
+                  : location.pathname.startsWith(navItem.to);
+                return (
+                  <Link
+                    key={navItem.to}
+                    to={navItem.to}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors inline-flex items-center gap-1.5 ${
+                      active
+                        ? isDark
+                          ? 'bg-white/10 text-white font-semibold'
+                          : 'bg-slate-900 text-white font-semibold'
+                        : 'opacity-70 hover:opacity-100 hover:bg-slate-500/10'
+                    }`}
+                  >
+                    <span>{navItem.label}</span>
+                    {navItem.badge !== undefined && (
+                      <span
+                        className="px-1.5 py-0.2 rounded-full text-[10px] font-bold text-slate-950"
+                        style={{ backgroundColor: primaryColor }}
+                      >
+                        {navItem.badge}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </nav>
           </div>
 
           {/* Center: Instant Search Input */}
@@ -720,10 +1225,21 @@ export function App() {
         <Route
           path="/"
           element={
-            <main className="max-w-[1380px] mx-auto px-4 sm:px-6 py-6 pb-28">
+            <main
+              className={`max-w-[1380px] mx-auto px-4 sm:px-6 py-6 ${
+                audioPost ? 'pb-24' : 'pb-8'
+              }`}
+            >
+              <input
+                ref={homeAvatarInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleHomeAvatarUpload}
+                className="hidden"
+              />
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {/* LEFT NAVIGATION COLUMN (3 cols) */}
-                <aside className="lg:col-span-3 lg:sticky lg:top-22 space-y-5">
+                {/* LEFT NAVIGATION COLUMN (3 cols — Independently Scrollable & Sticky) */}
+                <aside className="lg:col-span-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto pr-1 pb-6 space-y-5">
                   {/* Primary App Navigation */}
                   <nav
                     style={{ backgroundColor: cardBgColor }}
@@ -738,21 +1254,29 @@ export function App() {
                         to: '/notifications',
                         label: 'Notifications',
                         icon: Bell,
-                        badge: '3',
+                        badge:
+                          unreadNotificationsCount > 0
+                            ? String(unreadNotificationsCount)
+                            : undefined,
                       },
                       {
                         to: '/bookmarks',
                         label: 'Bookmarks',
                         icon: Bookmark,
-                        badge: bookmarkedIds.length > 0 ? String(bookmarkedIds.length) : undefined,
                       },
-                      { to: '/studio', label: 'Creator Studio', icon: LayoutDashboard },
+                      ...(currentUser.role === 'admin' ||
+                      currentUser.verificationTier === 'journalist' ||
+                      currentUser.role === 'moderator'
+                        ? [{ to: '/studio', label: 'Creator Studio', icon: LayoutDashboard }]
+                        : []),
                       {
                         to: `/profile/${currentUser.username}`,
                         label: 'My Profile',
                         icon: UserIcon,
                       },
-                      { to: '/admin', label: 'Admin Control', icon: Sliders },
+                      ...(currentUser.role === 'admin'
+                        ? [{ to: '/admin', label: 'Admin Control', icon: Sliders }]
+                        : []),
                     ].map((item) => {
                       const Icon = item.icon;
                       const isActive = item.exact
@@ -841,37 +1365,80 @@ export function App() {
                     </div>
                   </div>
 
-                  {/* Current User Session Card */}
+                  {/* Current User Session Card with Profile Photo Upload & Role Switcher */}
                   <div
                     style={{ backgroundColor: cardBgColor }}
-                    className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${
+                    className={`p-4 rounded-2xl border space-y-3 ${
                       isDark ? 'border-white/[0.07]' : 'border-black/[0.07]'
                     }`}
                   >
-                    <Link
-                      to={`/profile/${currentUser.username}`}
-                      className="flex items-center gap-3 min-w-0"
-                    >
-                      <img
-                        src={currentUser.avatarUrl}
-                        alt={currentUser.displayName}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                      <div className="min-w-0">
-                        <div className="font-semibold text-xs truncate">
-                          {currentUser.displayName}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          onClick={() => homeAvatarInputRef.current?.click()}
+                          className="relative group cursor-pointer shrink-0"
+                          title="Click to upload profile photo"
+                        >
+                          <img
+                            src={currentUser.avatarUrl}
+                            alt={currentUser.displayName}
+                            className="w-10 h-10 rounded-full object-cover group-hover:opacity-80 transition-opacity"
+                          />
+                          <span
+                            className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-slate-950 shadow"
+                            style={{ backgroundColor: primaryColor }}
+                          >
+                            <Camera className="w-2.5 h-2.5" />
+                          </span>
                         </div>
-                        <div className="text-[11px] opacity-55 truncate">
-                          @{currentUser.username}
-                        </div>
+                        <Link to={`/profile/${currentUser.username}`} className="min-w-0">
+                          <div className="font-semibold text-xs truncate hover:underline flex items-center gap-1.5">
+                            <span className="truncate">{currentUser.displayName}</span>
+                            {currentUser.role === 'admin' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-400 shrink-0">
+                                ADMIN
+                              </span>
+                            ) : currentUser.verificationTier === 'journalist' || currentUser.role === 'moderator' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-500/15 text-sky-400 shrink-0">
+                                JOURNALIST
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-500/15 text-slate-400 shrink-0">
+                                READER
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] opacity-55 truncate">
+                            @{currentUser.username}
+                          </div>
+                        </Link>
                       </div>
+                      <Link
+                        to="/login"
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-500/20 hover:bg-slate-500/10 text-[11px] font-medium shrink-0"
+                      >
+                        Switch
+                      </Link>
+                    </div>
+                  </div>
+
+                  {/* Privacy & Compliance Navigation Footer */}
+                  <div className="px-3 pt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] opacity-55">
+                    <Link to="/privacy" className="hover:underline">
+                      Privacy Policy
                     </Link>
-                    <Link
-                      to="/login"
-                      className="px-2.5 py-1.5 rounded-lg border border-slate-500/20 hover:bg-slate-500/10 text-[11px] font-medium shrink-0"
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={() => setCookieSettingsOpen(true)}
+                      className="hover:underline"
                     >
-                      Switch
-                    </Link>
+                      Cookie Settings
+                    </button>
+                    <span>•</span>
+                    <a href="/rss.xml" target="_blank" rel="noreferrer" className="hover:underline">
+                      RSS
+                    </a>
                   </div>
                 </aside>
 
@@ -1068,4 +1635,669 @@ export function App() {
                             </button>
 
                             <Link
-                    
+                              to="/create"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium opacity-70 hover:opacity-100 hover:bg-slate-500/10 transition-colors"
+                            >
+                              <span>Full Studio</span>
+                            </Link>
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={!quickHeadline.trim() && !quickBody.trim()}
+                            className="px-4 py-1.5 rounded-full text-xs font-semibold text-slate-950 disabled:opacity-40 transition-opacity"
+                            style={{ backgroundColor: primaryColor }}
+                          >
+                            Post Story
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </form>
+
+                  {/* NEWS CARDS STREAM */}
+                  {visiblePosts.length === 0 ? (
+                    <div
+                      style={{ backgroundColor: cardBgColor }}
+                      className="p-12 rounded-2xl border border-slate-500/15 text-center space-y-3"
+                    >
+                      <div className="text-base font-semibold">No stories match this filter</div>
+                      <p className="text-xs opacity-60">
+                        Try switching back to &ldquo;For You&rdquo; or clearing your search filter.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFeedTab('for_you');
+                          setSelectedCategory('all');
+                          setActiveTagFilter(null);
+                          setSearchQuery('');
+                        }}
+                        className="px-4 py-2 rounded-full text-xs font-semibold text-slate-950"
+                        style={{ backgroundColor: primaryColor }}
+                      >
+                        Reset Feed Filters
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {visiblePosts.map((post) => {
+                        const author = users.find((u) => u.id === post.authorId);
+                        return (
+                          <NewsPostCard
+                            key={post.id}
+                            post={post}
+                            author={author}
+                            allUsers={users}
+                            comments={comments}
+                            notes={notes}
+                            currentUser={currentUser}
+                            lang={lang}
+                            isDark={isDark}
+                            primaryColor={primaryColor}
+                            cardBgColor={cardBgColor}
+                            bookmarked={bookmarkedIds.includes(post.id)}
+                            isLiked={likedIds.includes(post.id)}
+                            isDisliked={dislikedIds.includes(post.id)}
+                            isReposted={repostedIds.includes(post.id)}
+                            likedCommentIds={likedCommentIds}
+                            onLike={handleLike}
+                            onDislike={handleDislike}
+                            onRepost={handleRepost}
+                            onQuoteRepost={handleQuoteRepost}
+                            onToggleBookmark={handleToggleBookmark}
+                            onAddComment={(pId, text, parentId) =>
+                              handleAddComment(pId, text, parentId ?? null)
+                            }
+                            onLikeComment={handleLikeComment}
+                            onDeleteComment={handleDeleteComment}
+                            onUpdatePost={handleUpdatePost}
+                            onDeletePost={handleDeletePost}
+                            onPlayAudio={handlePlayAudio}
+                            onOpenLightbox={(url, caption) => setLightboxMedia({ url, caption })}
+                            followedUserIds={followedUserIds}
+                            onToggleFollow={handleToggleFollow}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+
+                {/* RIGHT EDITORIAL & DISCOVERY SIDEBAR (3 cols — Independently Scrollable & Sticky) */}
+                <aside className="lg:col-span-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto pr-1 pb-6 space-y-5">
+                  {/* 1. Live Breaking Wire Timeline */}
+                  <div
+                    style={{ backgroundColor: cardBgColor }}
+                    className={`p-5 rounded-2xl border space-y-4 ${
+                      isDark ? 'border-white/[0.07]' : 'border-black/[0.07]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                        <span>Breaking Wire</span>
+                      </div>
+                      <span className="text-[11px] opacity-50">Live Updates</span>
+                    </div>
+
+                    <div className="relative pl-4 border-l border-slate-500/20 space-y-4">
+                      {posts.slice(0, 4).map((p) => (
+                        <Link
+                          key={p.id}
+                          to={`/article/${p.id}`}
+                          className="block group relative"
+                        >
+                          <span
+                            className="w-2 h-2 rounded-full absolute -left-[20.5px] top-1.5"
+                            style={{
+                              backgroundColor: p.isBreakingPinned ? '#f43f5e' : primaryColor,
+                            }}
+                          />
+                          <div className="text-[11px] opacity-55 flex items-center gap-1.5">
+                            <span>{formatRelativeTime(p.createdAt, lang)}</span>
+                            <span>•</span>
+                            <span className="truncate">{p.locationName.split(',')[0]}</span>
+                          </div>
+                          <div className="text-xs font-semibold leading-snug mt-0.5 group-hover:underline line-clamp-2">
+                            {p.headline}
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Trending Topics in News */}
+                  <div
+                    style={{ backgroundColor: cardBgColor }}
+                    className={`p-5 rounded-2xl border space-y-3.5 ${
+                      isDark ? 'border-white/[0.07]' : 'border-black/[0.07]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5" style={{ color: primaryColor }} />
+                        <span>Trending Topics</span>
+                      </h3>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {trendingTopics.map((item) => (
+                        <button
+                          key={item.tag}
+                          type="button"
+                          onClick={() =>
+                            setActiveTagFilter(activeTagFilter === item.tag ? null : item.tag)
+                          }
+                          className="w-full text-left p-2 rounded-xl hover:bg-slate-500/[0.06] transition-colors flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="text-[10px] uppercase opacity-50">
+                              {strings.categories[item.category as PostCategory] || item.category}
+                            </div>
+                            <div className="text-xs font-semibold mt-0.5">{item.tag}</div>
+                          </div>
+                          <span className="text-[11px] opacity-55">
+                            {(item.views / 1000).toFixed(1)}K reads
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 3. Who to Follow (Verified Journalists) */}
+                  <div
+                    style={{ backgroundColor: cardBgColor }}
+                    className={`p-5 rounded-2xl border space-y-4 ${
+                      isDark ? 'border-white/[0.07]' : 'border-black/[0.07]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold uppercase tracking-wider">
+                        Correspondents to Follow
+                      </h3>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      {users
+                        .filter((u) => u.id !== currentUser.id)
+                        .slice(0, 4)
+                        .map((u) => {
+                          const isFollowing = followedUserIds.includes(u.id);
+                          return (
+                            <div
+                              key={u.id}
+                              className="flex items-center justify-between gap-2.5"
+                            >
+                              <Link
+                                to={`/profile/${u.username}`}
+                                className="flex items-center gap-2.5 min-w-0 group"
+                              >
+                                <img
+                                  src={u.avatarUrl}
+                                  alt={u.displayName}
+                                  className="w-9 h-9 rounded-full object-cover shrink-0"
+                                />
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold truncate group-hover:underline flex items-center gap-1">
+                                    <span className="truncate">{u.displayName}</span>
+                                    <Check
+                                      className="w-3 h-3 shrink-0"
+                                      style={{ color: primaryColor }}
+                                    />
+                                  </div>
+                                  <div className="text-[11px] opacity-55 truncate">
+                                    @{u.username} • {(u.followersCount || 0).toLocaleString()} followers
+                                  </div>
+                                </div>
+                              </Link>
+
+                              <button
+                                type="button"
+                                onClick={() => handleToggleFollow(u.id)}
+                                className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors shrink-0 ${
+                                  isFollowing
+                                    ? 'border border-slate-500/30 opacity-75 hover:opacity-100'
+                                    : isDark
+                                    ? 'bg-white text-slate-950 hover:bg-slate-200'
+                                    : 'bg-slate-900 text-white hover:bg-slate-800'
+                                }`}
+                              >
+                                {isFollowing ? 'Following' : 'Follow'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            </main>
+          }
+        />
+
+        {/* 2. EDITORIAL MAGAZINE & VIDEO EXPLORE PAGE (/explore) */}
+        <Route
+          path="/explore"
+          element={
+            <Explore3DPage
+              posts={posts}
+              users={users}
+              comments={comments}
+              primaryColor={primaryColor}
+              breakingColor={breakingColor}
+              cardBgColor={cardBgColor}
+              isDark={isDark}
+              bookmarkedIds={bookmarkedIds}
+              likedIds={likedIds}
+              repostedIds={repostedIds}
+              onToggleBookmark={handleToggleBookmark}
+              onLike={handleLike}
+              onRepost={handleRepost}
+              onAddComment={(pId, text) => handleAddComment(pId, text, null)}
+            />
+          }
+        />
+
+        {/* 3. DEDICATED NOTIFICATIONS PAGE (/notifications) */}
+        <Route
+          path="/notifications"
+          element={
+            <NotificationsPage
+              posts={posts}
+              users={users}
+              notifications={notifications}
+              readNotificationIds={readNotificationIds}
+              primaryColor={primaryColor}
+              cardBgColor={cardBgColor}
+              isDark={isDark}
+              onMarkRead={handleMarkNotificationRead}
+              onMarkAllRead={handleMarkAllNotificationsRead}
+            />
+          }
+        />
+
+        {/* 4. DEDICATED BOOKMARKS / SAVED STORIES PAGE (/bookmarks) */}
+        <Route
+          path="/bookmarks"
+          element={
+            <BookmarksPage
+              posts={posts}
+              users={users}
+              comments={comments}
+              notes={notes}
+              bookmarkedIds={bookmarkedIds}
+              likedIds={likedIds}
+              dislikedIds={dislikedIds}
+              repostedIds={repostedIds}
+              likedCommentIds={likedCommentIds}
+              currentUser={currentUser}
+              lang={lang}
+              primaryColor={primaryColor}
+              cardBgColor={cardBgColor}
+              isDark={isDark}
+              onToggleBookmark={handleToggleBookmark}
+              onClearAllBookmarks={() => setBookmarkedIds([])}
+              onLike={handleLike}
+              onDislike={handleDislike}
+              onRepost={handleRepost}
+              onQuoteRepost={handleQuoteRepost}
+              onAddComment={(pId, text, parentId) => handleAddComment(pId, text, parentId ?? null)}
+              onLikeComment={handleLikeComment}
+              onDeleteComment={handleDeleteComment}
+              onUpdatePost={handleUpdatePost}
+              onDeletePost={handleDeletePost}
+              onPlayAudio={handlePlayAudio}
+              onOpenLightbox={(url, caption) => setLightboxMedia({ url, caption })}
+              followedUserIds={followedUserIds}
+              onToggleFollow={handleToggleFollow}
+            />
+          }
+        />
+
+        {/* 5. DEDICATED FULL-SCREEN ARTICLE READER (/article/:id) */}
+        <Route
+          path="/article/:id"
+          element={
+            <ArticleDetailPage
+              posts={posts}
+              users={users}
+              comments={comments}
+              notes={notes}
+              currentUser={currentUser}
+              lang={lang}
+              isDark={isDark}
+              primaryColor={primaryColor}
+              secondaryAiColor={secondaryAiColor}
+              breakingColor={breakingColor}
+              cardBgColor={cardBgColor}
+              algorithmWeights={settings.algorithm}
+              bookmarkedIds={bookmarkedIds}
+              likedIds={likedIds}
+              likedCommentIds={likedCommentIds}
+              userVotes={userVotes}
+              onVote={handleVote}
+              onLike={handleLike}
+              onToggleBookmark={handleToggleBookmark}
+              onAddComment={handleAddComment}
+              onLikeComment={handleLikeComment}
+              onDeleteComment={handleDeleteComment}
+              onAddCommunityNote={handleAddCommunityNote}
+              onVoteCommunityNote={handleVoteCommunityNote}
+              followedUserIds={followedUserIds}
+              onToggleFollow={handleToggleFollow}
+            />
+          }
+        />
+
+        {/* 6. DEDICATED PUBLISH DISPATCH STUDIO (/create) */}
+        <Route
+          path="/create"
+          element={
+            <CreatePostPage
+              currentUser={currentUser}
+              primaryColor={primaryColor}
+              breakingColor={breakingColor}
+              cardBgColor={cardBgColor}
+              isDark={isDark}
+              onCreatePost={handleCreatePost}
+            />
+          }
+        />
+
+        {/* 7. DEDICATED CREATOR / REPORTER STUDIO (/studio) */}
+        <Route
+          path="/studio"
+          element={
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+              <UserDashboardView
+                currentUser={currentUser}
+                posts={posts}
+                notes={notes}
+                bookmarkedIds={bookmarkedIds}
+                primaryColor={primaryColor}
+                cardBgColor={cardBgColor}
+                onUpdatePost={handleUpdatePost}
+                onDeletePost={handleDeletePost}
+                onUpdateUser={(uId, upd) => handleUpdateUser(uId, upd)}
+              />
+            </div>
+          }
+        />
+
+        {/* 8. DEDICATED ADMIN CONTROL DASHBOARD (/admin) */}
+        <Route
+          path="/admin"
+          element={
+            currentUser.role === 'admin' ? (
+              <AdminDashboardView
+                settings={settings}
+                posts={posts}
+                users={users}
+                currentUser={currentUser}
+                notes={notes}
+                auditLogs={auditLogs}
+                onUpdateSettings={handleUpdateSettings}
+                onUpdatePost={handleUpdatePost}
+                onDeletePost={handleDeletePost}
+                onUpdateUser={handleUpdateUser}
+                onUndoAuditLog={handleUndoAuditLog}
+              />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+
+        {/* 9. DEDICATED JOURNALIST / USER PROFILE PAGE (/profile/:username) */}
+        <Route
+          path="/profile/:username"
+          element={
+            <ProfilePage
+              users={users}
+              posts={posts}
+              notes={notes}
+              repostedIds={repostedIds}
+              followedUserIds={followedUserIds}
+              bookmarkedIds={bookmarkedIds}
+              currentUser={currentUser}
+              primaryColor={primaryColor}
+              cardBgColor={cardBgColor}
+              isDark={isDark}
+              onUpdateUser={handleUpdateUser}
+              onToggleFollow={handleToggleFollow}
+              onDeleteAccount={handleDeleteAccount}
+            />
+          }
+        />
+
+        {/* 10. DEDICATED LOGIN & REGISTRATION PAGES (/login & /register) */}
+        <Route
+          path="/login"
+          element={
+            <AuthPage
+              users={users}
+              currentUser={currentUser}
+              primaryColor={primaryColor}
+              cardBgColor={cardBgColor}
+              isDark={isDark}
+              onSelectUser={(u) => setCurrentUserId(u.id)}
+              onCreateUser={(newU) => {
+                setUsers((prev) => [newU, ...prev]);
+                setCurrentUserId(newU.id);
+              }}
+            />
+          }
+        />
+        <Route
+          path="/register"
+          element={
+            <AuthPage
+              users={users}
+              currentUser={currentUser}
+              primaryColor={primaryColor}
+              cardBgColor={cardBgColor}
+              isDark={isDark}
+              onSelectUser={(u) => setCurrentUserId(u.id)}
+              onCreateUser={(newU) => {
+                setUsers((prev) => [newU, ...prev]);
+                setCurrentUserId(newU.id);
+              }}
+            />
+          }
+        />
+
+        {/* 11. DEDICATED PRIVACY POLICY & DATA GOVERNANCE (/privacy) */}
+        <Route
+          path="/privacy"
+          element={
+            <PrivacyPolicyPage
+              primaryColor={primaryColor}
+              cardBgColor={cardBgColor}
+              isDark={isDark}
+              onOpenCookieSettings={() => setCookieSettingsOpen(true)}
+            />
+          }
+        />
+
+        {/* 12. 404 CATCH-ALL ROUTE */}
+        <Route
+          path="*"
+          element={
+            <NotFoundPage
+              primaryColor={primaryColor}
+              cardBgColor={cardBgColor}
+              isDark={isDark}
+            />
+          }
+        />
+      </Routes>
+
+      {/* =====================================================================
+          PERSISTENT BOTTOM GLASS AUDIO MINI-PLAYER (WHEN LISTENING TO A STORY)
+      ===================================================================== */}
+      {audioPost && (
+        <div
+          style={{
+            backgroundColor: isDark ? 'rgba(15, 23, 42, 0.94)' : 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(20px)',
+          }}
+          className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-2xl px-4 py-3 rounded-2xl border shadow-2xl flex items-center justify-between gap-4 ${
+            isDark ? 'border-white/15 text-white' : 'border-black/10 text-slate-900'
+          }`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={toggleAudioPlayPause}
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-950 shrink-0 shadow-sm"
+              style={{ backgroundColor: primaryColor }}
+            >
+              {isAudioPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+            </button>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider opacity-60">
+                <Headphones className="w-3 h-3" style={{ color: primaryColor }} />
+                <span>Pulse Audio Narration</span>
+              </div>
+              <Link
+                to={`/article/${audioPost.id}`}
+                className="text-xs sm:text-sm font-semibold truncate block hover:underline"
+              >
+                {audioPost.headline}
+              </Link>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const nextSpeed = audioSpeed === 1 ? 1.25 : audioSpeed === 1.25 ? 1.5 : 1;
+                setAudioSpeed(nextSpeed);
+              }}
+              className="px-2.5 py-1 rounded-lg border border-slate-500/25 text-[11px] font-mono"
+            >
+              {audioSpeed}x
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                window.speechSynthesis?.cancel();
+                setIsAudioPlaying(false);
+                setAudioPost(null);
+              }}
+              className="p-1.5 rounded-lg opacity-65 hover:opacity-100"
+              title="Close audio player"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          FULL-SCREEN IMAGE LIGHTBOX MODAL
+      ===================================================================== */}
+      {lightboxMedia && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4"
+          onClick={() => setLightboxMedia(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxMedia(null)}
+            className="absolute top-5 right-5 p-2.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <img
+            src={lightboxMedia.url}
+            alt={lightboxMedia.caption || 'Full resolution media'}
+            className="max-w-full max-h-[82vh] rounded-xl object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {lightboxMedia.caption && (
+            <p className="mt-4 text-xs sm:text-sm text-slate-300 max-w-2xl text-center">
+              {lightboxMedia.caption}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* =====================================================================
+          COMMAND-K QUICK SEARCH DIALOG
+      ===================================================================== */}
+      {commandOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-start justify-center pt-20 p-4"
+          onClick={() => setCommandOpen(false)}
+        >
+          <div
+            style={{ backgroundColor: cardBgColor }}
+            className="w-full max-w-xl rounded-2xl border border-slate-500/25 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-slate-500/15 flex items-center gap-3">
+              <Search className="w-4 h-4 opacity-50" />
+              <input
+                type="text"
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Jump to any story, topic, or page..."
+                className="w-full bg-transparent text-sm focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setCommandOpen(false)}
+                className="text-xs opacity-60 hover:opacity-100"
+              >
+                ESC
+              </button>
+            </div>
+            <div className="p-2 max-h-80 overflow-y-auto divide-y divide-slate-500/10 text-xs">
+              {posts
+                .filter((p) =>
+                  p.headline.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+                .slice(0, 5)
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setCommandOpen(false);
+                      navigate(`/article/${p.id}`);
+                    }}
+                    className="w-full p-3 text-left hover:bg-slate-500/10 flex items-center justify-between gap-3 rounded-xl"
+                  >
+                    <span className="font-medium truncate">{p.headline}</span>
+                    <span className="opacity-50 shrink-0">{p.locationName.split(',')[0]}</span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1.5s Pop Notification for Follow / Unfollow */}
+      {followToast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-950 text-xs font-semibold shadow-2xl border border-white/10 dark:border-black/10 backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <Check className="w-4 h-4 text-emerald-400 dark:text-emerald-600 shrink-0" />
+          <span>{followToast}</span>
+        </div>
+      )}
+
+      {/* Categorized Cookie Consent & Persistent Settings System */}
+      <CookieConsentBanner
+        primaryColor={primaryColor}
+        isDark={isDark}
+        isOpenExternal={cookieSettingsOpen}
+        onCloseExternal={() => setCookieSettingsOpen(false)}
+      />
+    </div>
+  );
+}
+
+export default App;

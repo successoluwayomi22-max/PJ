@@ -1,27 +1,39 @@
-import React, { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import React, { useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  ArrowLeft,
   ArrowUpRight,
   Calendar,
+  Camera,
   Check,
   Eye,
   FileText,
   Film,
   MapPin,
   Plus,
+  Repeat2,
   ShieldCheck,
+  Sliders,
   ThumbsUp,
+  Upload,
 } from 'lucide-react';
 import { CommunityNote, NewsPost, User } from '../types';
+import { AccountSettingsModal } from '../components/AccountSettingsModal';
 
 interface ProfilePageProps {
   users: User[];
   posts: NewsPost[];
   notes: CommunityNote[];
   currentUser: User;
+  repostedIds?: string[];
+  followedUserIds?: string[];
+  bookmarkedIds?: string[];
   primaryColor: string;
   cardBgColor: string;
   isDark: boolean;
+  onUpdateUser?: (userId: string, updates: Partial<User>, reason?: string) => void;
+  onToggleFollow?: (userId: string) => void;
+  onDeleteAccount?: (userId: string, passwordVerification: string) => boolean;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({
@@ -29,26 +41,67 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   posts,
   notes,
   currentUser,
+  repostedIds = [],
+  followedUserIds = [],
+  bookmarkedIds = [],
   primaryColor,
   cardBgColor,
   isDark,
+  onUpdateUser,
+  onToggleFollow,
+  onDeleteAccount,
 }) => {
   const { username } = useParams<{ username: string }>();
+  const navigate = useNavigate();
   const profileUser =
     users.find((u) => u.username.toLowerCase() === username?.toLowerCase()) || currentUser;
 
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dispatches' | 'media' | 'credentials'>('dispatches');
+  const isFollowing = followedUserIds.includes(profileUser.id);
+  const [activeTab, setActiveTab] = useState<'dispatches' | 'reposts' | 'media' | 'credentials'>('dispatches');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const canEditProfile = profileUser.id === currentUser.id || currentUser.role === 'admin';
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onUpdateUser) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        onUpdateUser(
+          profileUser.id,
+          { avatarUrl: reader.result },
+          `Updated profile photo for @${profileUser.username}`
+        );
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const userPosts = posts.filter(
     (p) => p.authorId === profileUser.id && p.status !== 'draft' && p.status !== 'removed'
   );
+  const repostedPosts =
+    profileUser.id === currentUser.id
+      ? posts.filter((p) => repostedIds.includes(p.id))
+      : [];
   const userNotes = notes.filter((n) => n.authorId === profileUser.id);
   const totalViews = userPosts.reduce((a, b) => a + b.viewCount, 0);
   const trustPct = Math.round(profileUser.trustScore * 100);
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 space-y-6">
+      <div className="flex items-center justify-between pb-1">
+        <button
+          type="button"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back</span>
+        </button>
+      </div>
+
       {/* Architectural Profile Banner & Identity Card */}
       <div
         style={{ backgroundColor: cardBgColor }}
@@ -69,14 +122,55 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         </div>
 
         <div className="px-6 sm:px-8 pb-7">
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarUpload}
+            className="hidden"
+          />
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 -mt-12 mb-5">
-            <img
-              src={profileUser.avatarUrl}
-              alt={profileUser.displayName}
-              className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover ring-4 ring-slate-950 shadow-xl"
-            />
+            <div
+              onClick={() => canEditProfile && avatarInputRef.current?.click()}
+              className={`relative inline-block self-start ${
+                canEditProfile ? 'cursor-pointer group' : ''
+              }`}
+              title={canEditProfile ? 'Click to upload new profile picture' : undefined}
+            >
+              <img
+                src={profileUser.avatarUrl}
+                alt={profileUser.displayName}
+                className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover ring-4 ring-slate-950 shadow-xl group-hover:opacity-85 transition-opacity"
+              />
+              {canEditProfile && (
+                <span
+                  className="absolute -bottom-1.5 -right-1.5 w-8 h-8 rounded-full flex items-center justify-center text-slate-950 shadow-lg transition-transform group-hover:scale-105"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  <Camera className="w-4 h-4" />
+                </span>
+              )}
+            </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              {canEditProfile && (
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="px-4 py-2 rounded-full text-xs font-semibold border border-slate-500/30 hover:bg-slate-500/10 transition-colors flex items-center gap-1.5"
+                >
+                  <Upload className="w-3.5 h-3.5" /> Upload Photo
+                </button>
+              )}
+              {profileUser.id === currentUser.id && (
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="px-4 py-2 rounded-full text-xs font-semibold border border-slate-500/30 hover:bg-slate-500/10 transition-colors flex items-center gap-1.5"
+                >
+                  <Sliders className="w-3.5 h-3.5" /> Account Settings
+                </button>
+              )}
               {profileUser.id === currentUser.id ? (
                 <Link
                   to="/studio"
@@ -87,10 +181,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               ) : (
                 <button
                   type="button"
-                  onClick={() => setIsFollowing((v) => !v)}
+                  onClick={() => onToggleFollow?.(profileUser.id)}
                   className={`px-5 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
                     isFollowing
-                      ? 'border border-slate-500/30 bg-slate-500/10'
+                      ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-400'
                       : 'text-slate-950 shadow-sm'
                   }`}
                   style={!isFollowing ? { backgroundColor: primaryColor } : undefined}
@@ -101,7 +195,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     </>
                   ) : (
                     <>
-                      <Plus className="w-3.5 h-3.5" /> Follow Wire
+                      <Plus className="w-3.5 h-3.5" /> Follow Correspondent
                     </>
                   )}
                 </button>
@@ -143,9 +237,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <div className="flex items-center gap-6 pt-2 text-xs font-mono">
                 <div>
                   <strong className="text-sm">
-                    {(profileUser.followersCount + (isFollowing ? 1 : 0)).toLocaleString()}
+                    {profileUser.followersCount.toLocaleString()}
                   </strong>{' '}
-                  <span className="opacity-60">Subscribers</span>
+                  <span className="opacity-60">Followers</span>
                 </div>
                 <div>
                   <strong className="text-sm">{userPosts.length}</strong>{' '}
@@ -181,9 +275,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-500/15 pb-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-500/15 pb-3">
         {[
           { id: 'dispatches', label: `Dispatches (${userPosts.length})`, icon: FileText },
+          ...(profileUser.id === currentUser.id
+            ? [{ id: 'reposts', label: `Reposts (${repostedPosts.length})`, icon: Repeat2 }]
+            : []),
           { id: 'media', label: 'Visual Media Reel', icon: Film },
           { id: 'credentials', label: `Community Verification (${userNotes.length})`, icon: ShieldCheck },
         ].map((tab) => {
@@ -253,6 +350,35 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         </div>
       )}
 
+      {activeTab === 'reposts' && (
+        <div className="space-y-4">
+          {repostedPosts.length === 0 ? (
+            <div
+              style={{ backgroundColor: cardBgColor }}
+              className="p-8 rounded-2xl border border-slate-500/15 text-center text-sm opacity-70"
+            >
+              You haven&apos;t reposted any stories yet. Click &ldquo;Repost&rdquo; on any feed story to share it here.
+            </div>
+          ) : (
+            repostedPosts.map((post) => (
+              <Link
+                key={post.id}
+                to={`/article/${post.id}`}
+                style={{ backgroundColor: cardBgColor }}
+                className="block p-5 rounded-2xl border border-slate-500/15 hover:border-slate-500/35 transition-all space-y-2"
+              >
+                <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
+                  <Repeat2 className="w-3.5 h-3.5" />
+                  <span>Reposted by @{profileUser.username}</span>
+                </div>
+                <h3 className="font-editorial text-xl font-semibold">{post.headline}</h3>
+                <p className="text-xs sm:text-sm opacity-75 line-clamp-2">{post.bodyText}</p>
+              </Link>
+            ))
+          )}
+        </div>
+      )}
+
       {activeTab === 'media' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {userPosts.flatMap((p) =>
@@ -312,6 +438,21 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             ))
           )}
         </div>
+      )}
+
+      {profileUser.id === currentUser.id && (
+        <AccountSettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          currentUser={currentUser}
+          userPosts={userPosts}
+          bookmarkedIds={bookmarkedIds}
+          primaryColor={primaryColor}
+          cardBgColor={cardBgColor}
+          isDark={isDark}
+          onUpdateUser={onUpdateUser || (() => {})}
+          onDeleteAccount={onDeleteAccount || (() => false)}
+        />
       )}
     </div>
   );

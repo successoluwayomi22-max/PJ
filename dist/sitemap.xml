@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">
+  <!-- Primary Public Landing Pages -->
+  <url>
+    <loc>https://pulsenews.global/</loc>
+    <lastmod>2026-10-31T08:00:00+00:00</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://pulsenews.global/explore</loc>
+    <lastmod>2026-10-31T08:00:00+00:00</lastmod>
+    <changefreq>always</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://pulsenews.global/privacy</loc>
+    <lastmod>2026-10-31T08:00:00+00:00</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+  <!-- Featured News Articles -->
+  <url>
+    <loc>https://pulsenews.global/article/post-1</loc>
+    <lastmod>2026-10-31T07:15:00+00:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <news:news>
+      <news:publication>
+        <news:name>Pulse News</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2026-10-31T07:15:00+00:00</news:publication_date>
+      <news:title>Tokyo Unveils Autonomous Maglev Express Pod Linking Haneda to Shibuya in 6 Minutes</news:title>
+    </news:news>
+  </url>
+  <url>
+    <loc>https://pulsenews.global/article/post-2</loc>
+    <lastmod>2026-10-31T06:45:00+00:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <news:news>
+      <news:publication>
+        <news:name>Pulse News</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2026-10-31T06:45:00+00:00</news:publication_date>
+      <news:title>Emergency Coastal Surge Barriers Deployed in Rotterdam Ahead of North Sea Gale</news:title>
+    </news:news>
+  </url>
+  <url>
+    <loc>https://pulsenews.global/article/post-3</loc>
+    <lastmod>2026-10-31T05:30:00+00:00</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <news:news>
+      <news:publication>
+        <news:name>Pulse News</news:name>
+        <news:language>en</news:language>
+      </news:publication>
+      <news:publication_date>2026-10-31T05:30:00+00:00</news:publication_date>
+      <news:title>Lagos Solar Micro-Grid Powers 40,000 Homes and Tech Hubs Through 100% Battery Inverters</news:title>
+    </news:news>
+  </url>
+</urlset>
+

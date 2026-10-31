@@ -1,13 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity,
+  ArrowLeft,
   ArrowUpRight,
+  Camera,
   Cpu,
   Database,
   Edit3,
   HardDrive,
   History,
+  Image as ImageIcon,
   Layers,
   Lock,
   Palette,
@@ -16,9 +19,9 @@ import {
   RotateCcw,
   ShieldCheck,
   Sliders,
-  Sparkles,
   Terminal,
   Trash2,
+  Upload,
   Users,
 } from 'lucide-react';
 import {
@@ -36,6 +39,7 @@ interface AdminDashboardViewProps {
   settings: SiteSettings;
   posts: NewsPost[];
   users: User[];
+  currentUser?: User;
   notes: CommunityNote[];
   auditLogs: AuditLogEntry[];
   onUpdateSettings: (next: SiteSettings, auditDesc: string) => void;
@@ -49,6 +53,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   settings,
   posts,
   users,
+  currentUser,
   notes,
   auditLogs,
   onUpdateSettings,
@@ -57,9 +62,60 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onUpdateUser,
   onUndoAuditLog,
 }) => {
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<
     'overview' | 'users' | 'branding' | 'telemetry' | 'algorithm' | 'audit'
   >('overview');
+
+  const [uploadTargetUserId, setUploadTargetUserId] = useState<string | null>(null);
+  const userAvatarInputRef = useRef<HTMLInputElement>(null);
+  const activeAdmin = currentUser || users[0];
+
+  const triggerUserPhotoUpload = (userId: string) => {
+    setUploadTargetUserId(userId);
+    userAvatarInputRef.current?.click();
+  };
+
+  const handleUserPhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const targetId = uploadTargetUserId || activeAdmin.id;
+    if (!file || !targetId) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        const targetUser = users.find((u) => u.id === targetId);
+        onUpdateUser(
+          targetId,
+          { avatarUrl: reader.result },
+          `Updated profile photo for @${targetUser?.username || 'user'}`
+        );
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) {
+      alert('Logo file size exceeds 3MB limit. Please choose a smaller image.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        onUpdateSettings(
+          { ...settings, logoUrl: reader.result },
+          `Uploaded official publication brand logo (${file.name})`
+        );
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const [telemetry, setTelemetry] = useState<TelemetrySnapshot | null>(null);
   const [heapHistory, setHeapHistory] = useState<number[]>([
@@ -67,6 +123,47 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   ]);
   const [aiInput, setAiInput] = useState('');
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
+
+  // Local buffered/debounced states so typing and dragging sliders never fire per-keystroke requests or lag the UI
+  const [draftSiteName, setDraftSiteName] = useState(settings.siteName);
+  const [draftSiteTagline, setDraftSiteTagline] = useState(settings.siteTagline);
+  const [draftBreakingBanner, setDraftBreakingBanner] = useState(settings.breakingBannerText);
+  const [draftGlassBlur, setDraftGlassBlur] = useState(settings.theme.glassBlurPx);
+  const [draftAlgorithm, setDraftAlgorithm] = useState(settings.algorithm);
+  const [draftTrustScores, setDraftTrustScores] = useState<Record<string, number>>({});
+  const debounceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    setDraftSiteName(settings.siteName);
+    setDraftSiteTagline(settings.siteTagline);
+    setDraftBreakingBanner(settings.breakingBannerText);
+    setDraftGlassBlur(settings.theme.glassBlurPx);
+    setDraftAlgorithm(settings.algorithm);
+  }, [
+    settings.siteName,
+    settings.siteTagline,
+    settings.breakingBannerText,
+    settings.theme.glassBlurPx,
+    settings.algorithm,
+  ]);
+
+  // Cleanup any pending debounce timers on unmount
+  useEffect(() => {
+    const timers = debounceTimersRef.current;
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+    };
+  }, []);
+
+  const scheduleDebouncedAction = (key: string, fn: () => void, delayMs = 800) => {
+    if (debounceTimersRef.current[key]) {
+      clearTimeout(debounceTimersRef.current[key]);
+    }
+    debounceTimersRef.current[key] = setTimeout(() => {
+      fn();
+      delete debounceTimersRef.current[key];
+    }, delayMs);
+  };
 
   const isDark = settings.theme.mode === 'dark';
   const cardBgColor = isDark ? settings.theme.darkBgCard : settings.theme.lightBgCard;
@@ -85,13 +182,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
+  // Only poll telemetry when the Telemetry tab is active so background polling never slows down other tabs
   useEffect(() => {
+    if (activeSection !== 'telemetry') return;
     fetchTelemetry();
-    const timer = setInterval(fetchTelemetry, 2800);
+    const timer = setInterval(fetchTelemetry, 5000);
     return () => clearInterval(timer);
-  }, []);
+  }, [activeSection]);
 
-  const triggerTelemetryAction = async (action: 'purge_cache' | 'heap_snapshot') => {
+  const triggerTelemetryAction = async (
+    action: 'purge_cache' | 'heap_snapshot' | 'clear_logs'
+  ) => {
     try {
       await fetch('/api/telemetry', {
         method: 'POST',
@@ -146,14 +247,67 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const totalViews = posts.reduce((a, b) => a + b.viewCount, 0);
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20">
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 space-y-5">
+      {/* Top Page Header Back Button */}
+      <div className="flex items-center justify-between pb-2 border-b border-slate-500/15">
+        <button
+          type="button"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back</span>
+        </button>
+      </div>
+
+      <input
+        ref={userAvatarInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleUserPhotoFileChange}
+        className="hidden"
+      />
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* DEDICATED ADMIN OS SIDEBAR */}
-        <aside className="lg:col-span-3 lg:sticky lg:top-20 space-y-4">
+        {/* DEDICATED ADMIN OS SIDEBAR (SCROLLABLE & STICKY) */}
+        <aside className="lg:col-span-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto pr-1 space-y-4">
           <div
             style={{ backgroundColor: cardBgColor }}
             className="p-5 rounded-2xl border border-slate-500/15 space-y-4"
           >
+            {/* Active Admin Profile & Photo Upload */}
+            <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-500/15">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  onClick={() => triggerUserPhotoUpload(activeAdmin.id)}
+                  className="relative group cursor-pointer shrink-0"
+                  title="Upload Admin Profile Picture"
+                >
+                  <img
+                    src={activeAdmin.avatarUrl}
+                    alt={activeAdmin.displayName}
+                    className="w-12 h-12 rounded-xl object-cover ring-1 ring-white/20 group-hover:opacity-80 transition-opacity"
+                  />
+                  <span
+                    className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-slate-950 shadow"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    <Camera className="w-3 h-3" />
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-xs truncate">{activeAdmin.displayName}</div>
+                  <button
+                    type="button"
+                    onClick={() => triggerUserPhotoUpload(activeAdmin.id)}
+                    className="text-[11px] font-medium hover:underline flex items-center gap-1 mt-0.5"
+                    style={{ color: primaryColor }}
+                  >
+                    <Upload className="w-3 h-3" /> Upload Photo
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <div>
               <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-amber-400">
                 Executive Command OS
@@ -169,7 +323,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 { id: 'users', label: `Correspondents (${users.length})`, icon: Users },
                 { id: 'branding', label: 'Brand & Color Studio', icon: Palette },
                 { id: 'telemetry', label: 'V8 Heap & Telemetry', icon: Cpu },
-                { id: 'algorithm', label: 'Algorithm & AI Copilot', icon: Sliders },
+                { id: 'algorithm', label: 'Feed Ranking & Automation', icon: Sliders },
                 { id: 'audit', label: `Audit History (${auditLogs.length})`, icon: History },
               ].map((item) => {
                 const Icon = item.icon;
@@ -441,11 +595,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        <img
-                          src={u.avatarUrl}
-                          alt={u.displayName}
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
+                        <div
+                          onClick={() => triggerUserPhotoUpload(u.id)}
+                          className="relative group cursor-pointer shrink-0"
+                          title={`Upload profile photo for ${u.displayName}`}
+                        >
+                          <img
+                            src={u.avatarUrl}
+                            alt={u.displayName}
+                            className="w-11 h-11 rounded-full object-cover group-hover:opacity-80 transition-opacity"
+                          />
+                          <span
+                            className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full flex items-center justify-center text-slate-950 shadow"
+                            style={{ backgroundColor: primaryColor }}
+                          >
+                            <Camera className="w-2.5 h-2.5" />
+                          </span>
+                        </div>
                         <div className="min-w-0">
                           <Link
                             to={`/profile/${u.username}`}
@@ -458,33 +624,46 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                           </div>
                         </div>
                       </div>
-                      <Link
-                        to={`/profile/${u.username}`}
-                        className="p-1.5 rounded-lg hover:bg-slate-500/10 opacity-60 hover:opacity-100"
-                      >
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      </Link>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => triggerUserPhotoUpload(u.id)}
+                          className="px-2.5 py-1 rounded-lg border border-slate-500/25 hover:bg-slate-500/10 text-[11px] font-medium flex items-center gap-1"
+                        >
+                          <Upload className="w-3 h-3" /> Photo
+                        </button>
+                        <Link
+                          to={`/profile/${u.username}`}
+                          className="p-1.5 rounded-lg hover:bg-slate-500/10 opacity-60 hover:opacity-100"
+                        >
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                        </Link>
+                      </div>
                     </div>
 
                     <div>
                       <div className="flex justify-between font-mono text-[11px] mb-1">
                         <span className="opacity-65">Provenance Trust Index</span>
                         <span className="text-emerald-400 font-semibold">
-                          {Math.round(u.trustScore * 100)}%
+                          {draftTrustScores[u.id] ?? Math.round(u.trustScore * 100)}%
                         </span>
                       </div>
                       <input
                         type="range"
                         min={5}
                         max={100}
-                        value={Math.round(u.trustScore * 100)}
-                        onChange={(e) =>
-                          onUpdateUser(
-                            u.id,
-                            { trustScore: Number(e.target.value) / 100 },
-                            `Adjusted @${u.username} Trust Score to ${e.target.value}%`
-                          )
-                        }
+                        value={draftTrustScores[u.id] ?? Math.round(u.trustScore * 100)}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setDraftTrustScores((prev) => ({ ...prev, [u.id]: val }));
+                          scheduleDebouncedAction(`trust_${u.id}`, () => {
+                            onUpdateUser(
+                              u.id,
+                              { trustScore: val / 100 },
+                              `Adjusted @${u.username} Trust Score to ${val}%`
+                            );
+                          });
+                        }}
                         className="w-full accent-emerald-400 cursor-pointer"
                       />
                     </div>
@@ -543,33 +722,45 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block font-mono uppercase text-[10px] opacity-60 mb-1.5">
-                      Publication Title
+                      Publication Title (Auto-saved)
                     </label>
                     <input
                       type="text"
-                      value={settings.siteName}
-                      onChange={(e) =>
-                        onUpdateSettings(
-                          { ...settings, siteName: e.target.value },
-                          `Renamed publication to "${e.target.value}"`
-                        )
-                      }
+                      value={draftSiteName}
+                      onChange={(e) => {
+                        const nextName = e.target.value;
+                        setDraftSiteName(nextName);
+                        scheduleDebouncedAction('siteName', () => {
+                          if (nextName.trim() && nextName !== settings.siteName) {
+                            onUpdateSettings(
+                              { ...settings, siteName: nextName },
+                              `Renamed publication to "${nextName}"`
+                            );
+                          }
+                        });
+                      }}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-slate-500/[0.07] border border-slate-500/20 font-semibold text-sm"
                     />
                   </div>
                   <div>
                     <label className="block font-mono uppercase text-[10px] opacity-60 mb-1.5">
-                      Editorial Masthead Subtitle
+                      Editorial Masthead Subtitle (Auto-saved)
                     </label>
                     <input
                       type="text"
-                      value={settings.siteTagline}
-                      onChange={(e) =>
-                        onUpdateSettings(
-                          { ...settings, siteTagline: e.target.value },
-                          'Updated publication masthead subtitle'
-                        )
-                      }
+                      value={draftSiteTagline}
+                      onChange={(e) => {
+                        const nextTagline = e.target.value;
+                        setDraftSiteTagline(nextTagline);
+                        scheduleDebouncedAction('siteTagline', () => {
+                          if (nextTagline !== settings.siteTagline) {
+                            onUpdateSettings(
+                              { ...settings, siteTagline: nextTagline },
+                              'Updated publication masthead subtitle'
+                            );
+                          }
+                        });
+                      }}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-slate-500/[0.07] border border-slate-500/20 text-sm"
                     />
                   </div>
@@ -577,19 +768,101 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
                 <div>
                   <label className="block font-mono uppercase text-[10px] opacity-60 mb-1.5">
-                    Priority Wire Ticker Dispatch
+                    Priority Wire Ticker Dispatch (Auto-saved)
                   </label>
                   <input
                     type="text"
-                    value={settings.breakingBannerText}
-                    onChange={(e) =>
-                      onUpdateSettings(
-                        { ...settings, breakingBannerText: e.target.value },
-                        'Updated Priority Wire Banner'
-                      )
-                    }
+                    value={draftBreakingBanner}
+                    onChange={(e) => {
+                      const nextBanner = e.target.value;
+                      setDraftBreakingBanner(nextBanner);
+                      scheduleDebouncedAction('breakingBanner', () => {
+                        if (nextBanner !== settings.breakingBannerText) {
+                          onUpdateSettings(
+                            { ...settings, breakingBannerText: nextBanner },
+                            'Updated Priority Wire Banner'
+                          );
+                        }
+                      });
+                    }}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-500/[0.07] border border-slate-500/20"
                   />
+                </div>
+
+                {/* Official Brand Logo Upload */}
+                <div className="p-4 rounded-xl border border-slate-500/20 bg-slate-500/[0.04] space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="font-semibold text-xs flex items-center gap-2">
+                        <Upload className="w-4 h-4 text-sky-400" />
+                        <span>Official Publication Logo</span>
+                      </div>
+                      <p className="text-[11px] opacity-60 mt-0.5">
+                        Upload your real newsroom brand logo (PNG, SVG, JPG, WebP) to display in the main header and brand marks.
+                      </p>
+                    </div>
+                    {settings.logoUrl && (
+                      <span className="self-start sm:self-auto px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                        Active Custom Logo
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-4 pt-1">
+                    {/* Logo Preview */}
+                    <div className="shrink-0">
+                      {settings.logoUrl ? (
+                        <div className="w-16 h-16 rounded-2xl overflow-hidden border border-slate-500/30 bg-black/40 flex items-center justify-center p-1.5 shadow-md">
+                          <img
+                            src={settings.logoUrl}
+                            alt="Publication Logo Preview"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-16 h-16 rounded-2xl border border-dashed border-slate-500/30 bg-slate-500/[0.06] flex flex-col items-center justify-center text-center p-2 opacity-70">
+                          <ImageIcon className="w-5 h-5 opacity-50 mb-1" />
+                          <span className="text-[9px] font-mono leading-tight">Emblem Only</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Logo Upload Inputs & Buttons */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                        className="hidden"
+                        onChange={handleLogoUpload}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => logoInputRef.current?.click()}
+                        className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-950 flex items-center gap-1.5 shadow-sm hover:opacity-90 transition-opacity"
+                        style={{ backgroundColor: primaryColor }}
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>{settings.logoUrl ? 'Change Logo Image' : 'Upload Real Logo'}</span>
+                      </button>
+
+                      {settings.logoUrl && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateSettings(
+                              { ...settings, logoUrl: undefined },
+                              'Reset publication logo to default emblem'
+                            )
+                          }
+                          className="px-3.5 py-2 rounded-xl text-xs font-medium border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition-colors flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove Logo</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
@@ -623,22 +896,26 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div>
                     <div className="flex justify-between font-mono uppercase text-[10px] opacity-60 mb-1.5">
                       <span>Glass Blur Depth</span>
-                      <span>{settings.theme.glassBlurPx}px</span>
+                      <span>{draftGlassBlur}px</span>
                     </div>
                     <input
                       type="range"
                       min={4}
                       max={32}
-                      value={settings.theme.glassBlurPx}
-                      onChange={(e) =>
-                        onUpdateSettings(
-                          {
-                            ...settings,
-                            theme: { ...settings.theme, glassBlurPx: Number(e.target.value) },
-                          },
-                          `Set glass blur to ${e.target.value}px`
-                        )
-                      }
+                      value={draftGlassBlur}
+                      onChange={(e) => {
+                        const nextBlur = Number(e.target.value);
+                        setDraftGlassBlur(nextBlur);
+                        scheduleDebouncedAction('glassBlur', () => {
+                          onUpdateSettings(
+                            {
+                              ...settings,
+                              theme: { ...settings.theme, glassBlurPx: nextBlur },
+                            },
+                            `Set glass blur to ${nextBlur}px`
+                          );
+                        });
+                      }}
                       className="w-full accent-sky-400 mt-2"
                     />
                   </div>
@@ -797,19 +1074,26 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <input
                         type="color"
                         value={item.val}
-                        onChange={(e) =>
-                          onUpdateSettings(
-                            {
-                              ...settings,
-                              theme: {
-                                ...settings.theme,
-                                presetId: 'custom',
-                                [item.key]: e.target.value,
-                              },
+                        onChange={(e) => {
+                          const hex = e.target.value;
+                          scheduleDebouncedAction(
+                            `color_${item.key}`,
+                            () => {
+                              onUpdateSettings(
+                                {
+                                  ...settings,
+                                  theme: {
+                                    ...settings.theme,
+                                    presetId: 'custom',
+                                    [item.key]: hex,
+                                  },
+                                },
+                                `Set ${item.label} to ${hex}`
+                              );
                             },
-                            `Set ${item.label} to ${e.target.value}`
-                          )
-                        }
+                            300
+                          );
+                        }}
                         className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent"
                       />
                       <div>
@@ -928,6 +1212,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     </button>
                     <button
                       type="button"
+                      onClick={() => triggerTelemetryAction('clear_logs')}
+                      className="px-3.5 py-1.5 rounded-lg border border-rose-500/25 text-rose-400 hover:bg-rose-500/10 font-mono text-[11px]"
+                    >
+                      Clear Logs
+                    </button>
+                    <button
+                      type="button"
                       onClick={fetchTelemetry}
                       className="p-1.5 rounded-lg border border-slate-500/25 hover:bg-slate-500/10"
                     >
@@ -1007,7 +1298,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     min: 0,
                     max: 4,
                     step: 0.1,
-                    val: settings.algorithm.eyewitnessBoost,
+                    val: draftAlgorithm.eyewitnessBoost,
                   },
                   {
                     label: 'Provenance Trust Weight (C)',
@@ -1015,7 +1306,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     min: 0.5,
                     max: 4,
                     step: 0.1,
-                    val: settings.algorithm.trustMultiplierWeight,
+                    val: draftAlgorithm.trustMultiplierWeight,
                   },
                   {
                     label: 'Engagement Velocity Multiplier (V)',
@@ -1023,7 +1314,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     min: 0.2,
                     max: 3,
                     step: 0.1,
-                    val: settings.algorithm.velocityWeight,
+                    val: draftAlgorithm.velocityWeight,
                   },
                   {
                     label: 'Temporal Decay Gravity (γ)',
@@ -1031,7 +1322,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     min: 1.0,
                     max: 3.0,
                     step: 0.1,
-                    val: settings.algorithm.timeDecayGravity,
+                    val: draftAlgorithm.timeDecayGravity,
                   },
                 ].map((slider) => (
                   <div key={slider.key}>
@@ -1047,18 +1338,22 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       max={slider.max}
                       step={slider.step}
                       value={slider.val}
-                      onChange={(e) =>
-                        onUpdateSettings(
-                          {
-                            ...settings,
-                            algorithm: {
-                              ...settings.algorithm,
-                              [slider.key]: Number(e.target.value),
-                            },
-                          },
-                          `Updated algorithm ${slider.key} to ${e.target.value}`
-                        )
-                      }
+                      onChange={(e) => {
+                        const nextVal = Number(e.target.value);
+                        setDraftAlgorithm((prev) => {
+                          const updated = { ...prev, [slider.key]: nextVal };
+                          scheduleDebouncedAction(`algo_${slider.key}`, () => {
+                            onUpdateSettings(
+                              {
+                                ...settings,
+                                algorithm: updated,
+                              },
+                              `Updated algorithm ${slider.key} to ${nextVal}`
+                            );
+                          });
+                          return updated;
+                        });
+                      }}
                       className="w-full accent-sky-400 cursor-pointer"
                     />
                   </div>
@@ -1072,10 +1367,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               >
                 <div>
                   <h3 className="text-base font-semibold flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-indigo-400" /> AI Newsroom Command Copilot
+                    <Terminal className="w-4 h-4 text-sky-400" /> Newsroom Automation Console
                   </h3>
                   <p className="opacity-65 mt-0.5">
-                    Execute automated forensics sweeps, palette shifts, or algorithm recalibrations.
+                    Execute automated forensics sweeps, palette shifts, or ranking recalibrations.
                   </p>
                 </div>
 

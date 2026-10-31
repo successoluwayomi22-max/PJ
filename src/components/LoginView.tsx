@@ -5,9 +5,9 @@ import {
   KeyRound,
   Lock,
   Mail,
+  MapPin,
   Radio,
   ShieldCheck,
-  Sparkles,
   UserCheck,
   UserPlus,
 } from 'lucide-react';
@@ -221,7 +221,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                         : 'border-slate-500/20'
                     }`}
                   >
-                    <div className="font-bold">🔴 Citizen Eyewitness</div>
+                    <div className="font-bold">Citizen Eyewitness</div>
                     <div className="text-[11px] opacity-70 mt-0.5">
                       Post on-the-scene videos & GPS reports
                     </div>
@@ -235,7 +235,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                         : 'border-slate-500/20'
                     }`}
                   >
-                    <div className="font-bold">📰 Field Journalist</div>
+                    <div className="font-bold">Field Journalist</div>
                     <div className="text-[11px] opacity-70 mt-0.5">
                       Publish investigative stories & notes
                     </div>
@@ -312,8 +312,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   {post.isEyewitness ? 'EYEWITNESS' : post.category.toUpperCase()}
                 </span>
               </div>
-              <div className="text-[11px] text-sky-400 font-semibold truncate">
-                📍 {post.locationName}
+              <div className="text-[11px] text-sky-400 font-semibold truncate flex items-center gap-1">
+                <MapPin className="w-3 h-3 shrink-0" />
+                <span>{post.locationName}</span>
               </div>
               <h3 className="text-xs font-bold line-clamp-2 mt-0.5">{post.headline}</h3>
             </div>
@@ -322,7 +323,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
         <div className="relative z-10 p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Sparkles className="w-6 h-6 text-sky-400 shrink-0" />
+            <ShieldCheck className="w-6 h-6 text-sky-400 shrink-0" />
             <div>
               <div className="text-xs font-extrabold uppercase tracking-wider">
                 Truth-Weighted Citizen Journalism

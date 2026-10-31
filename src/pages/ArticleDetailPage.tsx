@@ -5,19 +5,26 @@ import {
   Bookmark,
   Check,
   Compass,
+  CornerDownRight,
+  Download,
   ExternalLink,
+  FileText,
   Film,
+  Flag,
+  Heart,
   Image as ImageIcon,
   Languages,
+  Link2,
+  Mail,
   MapPin,
   MessageSquare,
   Radio,
   Share2,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -47,10 +54,17 @@ interface ArticleDetailPageProps {
   cardBgColor: string;
   algorithmWeights: AlgorithmWeights;
   bookmarkedIds: string[];
+  likedIds?: string[];
+  likedCommentIds?: string[];
   userVotes: Record<string, 'up' | 'down'>;
   onVote: (postId: string, dir: 'up' | 'down') => void;
+  onLike?: (postId: string) => void;
   onToggleBookmark: (postId: string) => void;
   onAddComment: (postId: string, content: string, parentId?: string | null) => void;
+  onLikeComment?: (commentId: string) => void;
+  onDeleteComment?: (commentId: string, postId: string) => void;
+  followedUserIds?: string[];
+  onToggleFollow?: (userId: string) => void;
   onAddCommunityNote: (postId: string, noteText: string, sourceUrl: string) => void;
   onVoteCommunityNote: (noteId: string, helpful: boolean) => void;
 }
@@ -60,18 +74,25 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
   users,
   comments,
   notes,
+  currentUser,
   lang,
   isDark,
   primaryColor,
   secondaryAiColor,
-  breakingColor,
   cardBgColor,
   algorithmWeights,
   bookmarkedIds,
+  likedIds = [],
+  likedCommentIds = [],
   userVotes,
   onVote,
+  onLike,
   onToggleBookmark,
   onAddComment,
+  onLikeComment,
+  onDeleteComment,
+  followedUserIds = [],
+  onToggleFollow,
   onAddCommunityNote,
   onVoteCommunityNote,
 }) => {
@@ -88,13 +109,53 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
   const [commentText, setCommentText] = useState('');
+  const [commentSort, setCommentSort] = useState<'top' | 'newest' | 'oldest'>('top');
+  const [replyingToId, setReplyingToId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
   const [noteText, setNoteText] = useState('');
   const [noteSource, setNoteSource] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [downloadedToast, setDownloadedToast] = useState(false);
+  const [reportedCommentId, setReportedCommentId] = useState<string | null>(null);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    if (post) {
+      document.title = `${post.headline} | Pulse News`;
+
+      let script = document.getElementById('json-ld-news-article') as HTMLScriptElement | null;
+      if (!script) {
+        script = document.createElement('script');
+        script.id = 'json-ld-news-article';
+        script.type = 'application/ld+json';
+        document.head.appendChild(script);
+      }
+      script.text = JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'NewsArticle',
+        headline: post.headline,
+        description: post.bodyText.slice(0, 200),
+        datePublished: post.createdAt,
+        dateModified: post.createdAt,
+        image: post.media[0]?.url || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200',
+        author: {
+          '@type': 'Person',
+          name: author?.displayName || 'Correspondent',
+          url: `https://pulse-news.org/profile/${author?.username || 'reporter'}`,
+        },
+        publisher: {
+          '@type': 'NewsMediaOrganization',
+          name: 'Pulse News Global',
+          logo: {
+            '@type': 'ImageObject',
+            url: 'https://pulse-news.org/logo.png',
+          },
+        },
+      });
+    }
+
     const onScroll = () => {
       const total = document.documentElement.scrollHeight - window.innerHeight;
       if (total > 0) {
@@ -105,8 +166,11 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
     return () => {
       window.removeEventListener('scroll', onScroll);
       window.speechSynthesis?.cancel();
+      document.title = 'Pulse News | Global Live Intelligence & Open Journalism';
+      const existingScript = document.getElementById('json-ld-news-article');
+      if (existingScript) existingScript.remove();
     };
-  }, [id]);
+  }, [id, post, author]);
 
   if (!post) {
     return (
@@ -126,9 +190,56 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
   const rank = computePostRankScore(post, author, algorithmWeights, notes);
   const postNotes = notes.filter((n) => n.postId === post.id);
   const postComments = comments.filter((c) => c.postId === post.id);
+  const topLevelComments = postComments
+    .filter((c) => !c.parentCommentId)
+    .sort((a, b) => {
+      if (commentSort === 'top') return b.upvotes - a.upvotes;
+      if (commentSort === 'newest')
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
   const activeMedia = post.media[activeMediaIdx] || post.media[0];
   const bookmarked = bookmarkedIds.includes(post.id);
+  const isLiked = likedIds.includes(post.id) || userVotes[post.id] === 'up';
   const userVote = userVotes[post.id];
+  const isFollowingAuthor = author ? followedUserIds.includes(author.id) : false;
+
+  const handleDownloadArticleReport = () => {
+    const lines = [
+      '====================================================================',
+      `PULSE NEWS — FULL ARTICLE & COMMENTS ARCHIVE`,
+      '====================================================================',
+      `HEADLINE: ${post.headline}`,
+      `AUTHOR: ${author?.displayName || 'Correspondent'} (@${author?.username || 'reporter'})`,
+      `LOCATION: ${post.locationName}`,
+      `PUBLISHED: ${new Date(post.createdAt).toLocaleString()}`,
+      '--------------------------------------------------------------------',
+      '',
+      post.bodyText,
+      '',
+      'KEY FINDINGS:',
+      ...post.aiSummary.map((s, idx) => `${idx + 1}. ${s}`),
+      '',
+      '--------------------------------------------------------------------',
+      `ALL COMMENTS (${postComments.length}):`,
+      '--------------------------------------------------------------------',
+      ...postComments.map((c) => {
+        const u = users.find((usr) => usr.id === c.authorId);
+        return `@${u?.username || 'reader'} (${c.upvotes} likes): "${c.content}"`;
+      }),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pulse-article-${post.id}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setDownloadedToast(true);
+    setTimeout(() => setDownloadedToast(false), 2200);
+  };
 
   const targetLang: LanguageCode = lang === 'en' ? 'es' : lang;
   const translated = post.translations?.[targetLang] || {
@@ -211,31 +322,48 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
 
               {/* Author Byline & Utility Toolbar */}
               <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-500/15">
-                <Link
-                  to={`/profile/${author?.username || 'correspondent'}`}
-                  className="flex items-center gap-3 group"
-                >
-                  <img
-                    src={author?.avatarUrl}
-                    alt={author?.displayName}
-                    className="w-11 h-11 rounded-full object-cover ring-1 ring-white/20"
-                  />
-                  <div>
-                    <div className="font-semibold text-sm group-hover:underline flex items-center gap-1.5">
-                      <span>{author?.displayName}</span>
-                      <span
-                        className="inline-flex items-center justify-center w-4 h-4 rounded-full"
-                        style={{ backgroundColor: `${primaryColor}25`, color: primaryColor }}
-                      >
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </span>
+                <div className="flex items-center gap-3">
+                  <Link
+                    to={`/profile/${author?.username || 'correspondent'}`}
+                    className="flex items-center gap-3 group"
+                  >
+                    <img
+                      src={author?.avatarUrl}
+                      alt={author?.displayName}
+                      className="w-11 h-11 rounded-full object-cover ring-1 ring-white/20"
+                    />
+                    <div>
+                      <div className="font-semibold text-sm group-hover:underline flex items-center gap-1.5">
+                        <span>{author?.displayName}</span>
+                        <span
+                          className="inline-flex items-center justify-center w-4 h-4 rounded-full"
+                          style={{ backgroundColor: `${primaryColor}25`, color: primaryColor }}
+                        >
+                          <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        </span>
+                      </div>
+                      <div className="text-xs opacity-60 font-mono">
+                        @{author?.username} • {Math.round((author?.trustScore ?? 0.9) * 100)}% Trust •{' '}
+                        {formatRelativeTime(post.createdAt, lang)}
+                      </div>
                     </div>
-                    <div className="text-xs opacity-60 font-mono">
-                      @{author?.username} • {Math.round((author?.trustScore ?? 0.9) * 100)}% Trust •{' '}
-                      {formatRelativeTime(post.createdAt, lang)}
-                    </div>
-                  </div>
-                </Link>
+                  </Link>
+
+                  {author && author.id !== currentUser.id && onToggleFollow && (
+                    <button
+                      type="button"
+                      onClick={() => onToggleFollow(author.id)}
+                      className={`ml-1 px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                        isFollowingAuthor
+                          ? 'border border-slate-500/30 opacity-75 hover:opacity-100'
+                          : 'text-slate-950 font-bold'
+                      }`}
+                      style={!isFollowingAuthor ? { backgroundColor: primaryColor } : undefined}
+                    >
+                      {isFollowingAuthor ? 'Following' : '+ Follow'}
+                    </button>
+                  )}
+                </div>
 
                 {/* Reader Controls: Audio TTS, Font Size, Translate, Bookmark */}
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -290,30 +418,112 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
                   <button
                     type="button"
                     onClick={() => onToggleBookmark(post.id)}
-                    className={`p-2 rounded-full border transition-colors ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                       bookmarked
                         ? 'border-sky-400 text-sky-400 bg-sky-500/10'
                         : 'border-slate-500/25 hover:bg-slate-500/10'
                     }`}
                   >
                     <Bookmark className={`w-3.5 h-3.5 ${bookmarked ? 'fill-current' : ''}`} />
+                    <span>{bookmarked ? 'Saved' : 'Save'}</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => {
-                      navigator.clipboard?.writeText(window.location.href);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 1800);
-                    }}
-                    className="p-2 rounded-full border border-slate-500/25 hover:bg-slate-500/10"
+                    onClick={handleDownloadArticleReport}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
                   >
-                    {copied ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    {downloadedToast ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Downloaded</span>
+                      </>
                     ) : (
-                      <Share2 className="w-3.5 h-3.5" />
+                      <>
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download</span>
+                      </>
                     )}
                   </button>
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowShareMenu((v) => !v)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-slate-500/25 hover:bg-slate-500/10"
+                    >
+                      {copied ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Copied Link</span>
+                        </>
+                      ) : (
+                        <>
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span>Share</span>
+                        </>
+                      )}
+                    </button>
+
+                    {showShareMenu && (
+                      <div
+                        style={{ backgroundColor: cardBgColor }}
+                        className={`absolute right-0 top-10 w-56 rounded-2xl border p-1.5 shadow-2xl z-30 text-xs space-y-0.5 ${
+                          isDark ? 'border-white/15' : 'border-black/15'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(window.location.href);
+                            setCopied(true);
+                            setShowShareMenu(false);
+                            setTimeout(() => setCopied(false), 1500);
+                          }}
+                          className="w-full px-3 py-2 rounded-xl text-left flex items-center gap-2.5 hover:bg-slate-500/10 font-medium"
+                        >
+                          <Link2 className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Copy Story Link</span>
+                        </button>
+                        <a
+                          href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
+                            post.headline
+                          )}&url=${encodeURIComponent(window.location.href)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => setShowShareMenu(false)}
+                          className="w-full px-3 py-2 rounded-xl text-left flex items-center gap-2.5 hover:bg-slate-500/10 font-medium"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+                          <span>Share on X / Twitter</span>
+                        </a>
+                        <a
+                          href={`https://wa.me/?text=${encodeURIComponent(
+                            `${post.headline} — ${window.location.href}`
+                          )}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => setShowShareMenu(false)}
+                          className="w-full px-3 py-2 rounded-xl text-left flex items-center gap-2.5 hover:bg-slate-500/10 font-medium"
+                        >
+                          <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Share on WhatsApp</span>
+                        </a>
+                        <a
+                          href={`mailto:?subject=${encodeURIComponent(
+                            post.headline
+                          )}&body=${encodeURIComponent(
+                            `${post.headline}\n\n${post.bodyText}\n\nRead full story: ${window.location.href}`
+                          )}`}
+                          onClick={() => setShowShareMenu(false)}
+                          className="w-full px-3 py-2 rounded-xl text-left flex items-center gap-2.5 hover:bg-slate-500/10 font-medium"
+                        >
+                          <Mail className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Share via Email</span>
+                        </a>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </header>
@@ -396,8 +606,8 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
             >
               <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-widest opacity-65">
                 <span className="flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" style={{ color: secondaryAiColor }} />
-                  Executive Synthesis • Key Findings
+                  <FileText className="w-3.5 h-3.5" style={{ color: secondaryAiColor }} />
+                  Story Highlights & Key Findings
                 </span>
                 <span>Verified Transcript</span>
               </div>
@@ -447,49 +657,78 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
                 ))}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onVote(post.id, 'up')}
+                  onClick={() => (onLike ? onLike(post.id) : onVote(post.id, 'up'))}
                   className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold border transition-colors ${
-                    userVote === 'up'
-                      ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                    isLiked
+                      ? 'bg-rose-500 text-white border-rose-400'
                       : 'border-slate-500/25 hover:bg-slate-500/10'
                   }`}
                 >
-                  <ThumbsUp className="w-3.5 h-3.5" />
-                  <span>Endorse Accuracy ({post.upvotes})</span>
+                  <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-current' : ''}`} />
+                  <span>{isLiked ? 'Liked' : 'Like'} ({post.upvotes})</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => onVote(post.id, 'down')}
                   className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-xs border transition-colors ${
                     userVote === 'down'
-                      ? 'bg-rose-500 text-white border-rose-400'
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold'
                       : 'border-slate-500/25 opacity-70 hover:opacity-100'
                   }`}
                 >
                   <ThumbsDown className="w-3.5 h-3.5" />
-                  <span>{post.downvotes}</span>
+                  <span>Dislike ({post.downvotes})</span>
                 </button>
               </div>
             </div>
 
             {/* Threaded Discussion Section */}
             <section className="space-y-5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className="text-lg font-semibold flex items-center gap-2">
                   <MessageSquare className="w-4 h-4" />
-                  Public Record & Field Discussion ({postComments.length})
+                  All Reader Comments ({postComments.length})
                 </h3>
+                <div className="flex items-center gap-1 text-xs">
+                  {(['top', 'newest', 'oldest'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setCommentSort(mode)}
+                      className={`px-3 py-1 rounded-full capitalize transition-colors ${
+                        commentSort === mode
+                          ? isDark
+                            ? 'bg-white text-slate-950 font-semibold'
+                            : 'bg-slate-900 text-white font-semibold'
+                          : 'opacity-65 hover:opacity-100'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex gap-3">
+                <img
+                  src={currentUser.avatarUrl}
+                  alt={currentUser.displayName}
+                  className="w-10 h-10 rounded-full object-cover shrink-0 mt-0.5"
+                />
                 <input
                   type="text"
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
-                  placeholder="Contribute verified field context or analysis..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && commentText.trim()) {
+                      onAddComment(post.id, commentText.trim(), null);
+                      setCommentText('');
+                    }
+                  }}
+                  placeholder={`Write a comment as ${currentUser.displayName}...`}
                   className="flex-1 px-4 py-3 rounded-xl bg-slate-500/10 border border-slate-500/20 text-sm focus:outline-none focus:border-sky-400"
                 />
                 <button
@@ -502,18 +741,24 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
                   className="px-6 py-3 rounded-xl text-xs font-semibold text-slate-950 shrink-0"
                   style={{ backgroundColor: primaryColor }}
                 >
-                  Publish Comment
+                  Post Comment
                 </button>
               </div>
 
               <div className="space-y-3">
-                {postComments.map((c) => {
+                {topLevelComments.map((c) => {
                   const cAuthor = users.find((u) => u.id === c.authorId);
+                  const cLiked = likedCommentIds.includes(c.id);
+                  const childReplies = postComments.filter((r) => r.parentCommentId === c.id);
+                  const isOwnComment = c.authorId === currentUser.id;
+                  const isAdmin = currentUser.role === 'admin';
+                  const canDelete = isOwnComment || isAdmin;
+
                   return (
                     <div
                       key={c.id}
                       style={{ backgroundColor: cardBgColor }}
-                      className="p-4 rounded-xl border border-slate-500/15 space-y-2"
+                      className="p-4 rounded-xl border border-slate-500/15 space-y-2.5"
                     >
                       <div className="flex items-center justify-between text-xs">
                         <Link
@@ -533,6 +778,150 @@ export const ArticleDetailPage: React.FC<ArticleDetailPageProps> = ({
                         </span>
                       </div>
                       <p className="text-sm leading-relaxed opacity-90">{c.content}</p>
+
+                      {/* Comment Actions */}
+                      <div className="flex items-center gap-4 pt-1 text-xs opacity-75">
+                        <button
+                          type="button"
+                          onClick={() => onLikeComment && onLikeComment(c.id)}
+                          className={`inline-flex items-center gap-1 font-medium ${
+                            cLiked ? 'text-rose-500 font-semibold' : 'hover:text-rose-500'
+                          }`}
+                        >
+                          <Heart className={`w-3.5 h-3.5 ${cLiked ? 'fill-current' : ''}`} />
+                          <span>{cLiked ? 'Liked' : 'Like'} ({c.upvotes})</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReplyingToId(replyingToId === c.id ? null : c.id)}
+                          className="inline-flex items-center gap-1 font-medium hover:text-sky-400"
+                        >
+                          <CornerDownRight className="w-3.5 h-3.5" />
+                          <span>Reply</span>
+                        </button>
+                        {canDelete && onDeleteComment && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteComment(c.id, post.id)}
+                            className={`inline-flex items-center gap-1 hover:underline ${
+                              isOwnComment ? 'text-rose-400' : 'text-amber-400 font-semibold'
+                            }`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>{isOwnComment ? 'Delete' : 'Admin Remove'}</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReportedCommentId(c.id);
+                            setTimeout(() => setReportedCommentId(null), 2500);
+                          }}
+                          className={`inline-flex items-center gap-1 transition-colors ${
+                            reportedCommentId === c.id ? 'text-amber-400 font-semibold' : 'hover:text-amber-400'
+                          }`}
+                          title="Report comment for community review"
+                        >
+                          <Flag className="w-3.5 h-3.5" />
+                          <span>{reportedCommentId === c.id ? 'Reported' : 'Report'}</span>
+                        </button>
+                      </div>
+
+                      {/* Reply Input */}
+                      {replyingToId === c.id && (
+                        <div className="flex gap-2 pt-2">
+                          <input
+                            type="text"
+                            autoFocus
+                            value={replyText}
+                            onChange={(e) => setReplyText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && replyText.trim()) {
+                                onAddComment(post.id, replyText.trim(), c.id);
+                                setReplyText('');
+                                setReplyingToId(null);
+                              }
+                            }}
+                            placeholder={`Reply to @${cAuthor?.username || 'reader'}...`}
+                            className="flex-1 px-3.5 py-2 rounded-lg bg-slate-500/10 border border-slate-500/20 text-xs focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!replyText.trim()) return;
+                              onAddComment(post.id, replyText.trim(), c.id);
+                              setReplyText('');
+                              setReplyingToId(null);
+                            }}
+                            className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-950"
+                            style={{ backgroundColor: primaryColor }}
+                          >
+                            Reply
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Nested Replies */}
+                      {childReplies.length > 0 && (
+                        <div className="mt-2 pl-4 border-l-2 border-slate-500/20 space-y-2.5 pt-1">
+                          {childReplies.map((r) => {
+                            const rAuthor = users.find((u) => u.id === r.authorId);
+                            const rLiked = likedCommentIds.includes(r.id);
+                            const isOwnReply = r.authorId === currentUser.id;
+                            const canDeleteReply = isOwnReply || isAdmin;
+                            return (
+                              <div key={r.id} className="space-y-1 text-xs">
+                                <div className="flex items-center justify-between">
+                                  <Link
+                                    to={`/profile/${rAuthor?.username || 'reader'}`}
+                                    className="font-semibold hover:underline flex items-center gap-2"
+                                  >
+                                    <img
+                                      src={rAuthor?.avatarUrl}
+                                      alt={rAuthor?.displayName}
+                                      className="w-5 h-5 rounded-full object-cover"
+                                    />
+                                    <span>{rAuthor?.displayName || 'Reader'}</span>
+                                    <span className="opacity-50">@{rAuthor?.username}</span>
+                                  </Link>
+                                  <span className="opacity-50 text-[11px]">
+                                    {formatRelativeTime(r.createdAt, lang)}
+                                  </span>
+                                </div>
+                                <p className="opacity-90 leading-relaxed pl-7">{r.content}</p>
+                                <div className="pl-7 flex items-center gap-3 text-[11px] opacity-75">
+                                  <button
+                                    type="button"
+                                    onClick={() => onLikeComment && onLikeComment(r.id)}
+                                    className={`inline-flex items-center gap-1 ${
+                                      rLiked ? 'text-rose-500 font-semibold' : 'hover:text-rose-500'
+                                    }`}
+                                  >
+                                    <Heart
+                                      className={`w-3 h-3 ${rLiked ? 'fill-current' : ''}`}
+                                    />
+                                    <span>{rLiked ? 'Liked' : 'Like'} ({r.upvotes})</span>
+                                  </button>
+                                  {canDeleteReply && onDeleteComment && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onDeleteComment(r.id, post.id)}
+                                      className={`inline-flex items-center gap-1 hover:underline ${
+                                        isOwnReply
+                                          ? 'text-rose-400'
+                                          : 'text-amber-400 font-semibold'
+                                      }`}
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                      <span>{isOwnReply ? 'Delete' : 'Admin Remove'}</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

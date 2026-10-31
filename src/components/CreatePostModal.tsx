@@ -2,12 +2,12 @@ import React, { useRef, useState } from 'react';
 import {
   Camera,
   Compass,
+  FileText,
   Film,
   Link2,
   MapPin,
   Navigation,
   Radio,
-  Sparkles,
   Tag,
   Trash2,
   Upload,
@@ -229,7 +229,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
               />
               <div>
                 <div className="text-xs font-extrabold uppercase tracking-wider flex items-center gap-2">
-                  🔴 Eyewitness On-The-Scene Mode: {isEyewitness ? 'ACTIVE' : 'OFF'}
+                  Eyewitness On-The-Scene Mode: {isEyewitness ? 'ACTIVE' : 'OFF'}
                 </div>
                 <p className="text-[11px] text-slate-300 mt-0.5">
                   Attaches cryptographic C2PA device timestamp, GPS coordinates & +1.5x Feed Priority Boost
@@ -249,7 +249,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
             </div>
           </div>
 
-          {/* 2. HEADLINE + AI POLISH */}
+          {/* 2. HEADLINE + AUTO-FILL TEMPLATE */}
           <div>
             <div className="flex items-center justify-between text-xs font-semibold mb-1.5">
               <span>Headline / What is happening? *</span>
@@ -259,7 +259,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                   onClick={handleAiEnhance}
                   className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-500/25 text-indigo-300 border border-indigo-400/40 hover:bg-indigo-500/35 transition-colors"
                 >
-                  <Sparkles className="w-3 h-3" /> AI Polish & Auto-Fill
+                  <FileText className="w-3 h-3" /> Auto-Fill Template
                 </button>
                 <span className={headline.length > 140 ? 'text-rose-400' : 'text-slate-400'}>
                   {headline.length}/140
@@ -384,7 +384,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                     className="w-full h-full object-cover opacity-85"
                   />
                   <span className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded bg-slate-950/85 text-[10px] font-bold uppercase">
-                    {item.type === 'panorama_360' ? '🌐 360°' : item.type === 'video' ? '🎥 Video' : '📷 Photo'}
+                    {item.type === 'panorama_360' ? '360° Panorama' : item.type === 'video' ? 'Video' : 'Photo'}
                   </span>
                   <button
                     type="button"
@@ -410,7 +410,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-400/40 text-xs font-semibold hover:bg-sky-500/30"
               >
                 <Navigation className="w-3 h-3" />
-                {gpsDetecting ? 'Detecting GPS...' : '🎯 Auto-Detect Current GPS'}
+                {gpsDetecting ? 'Detecting GPS...' : 'Auto-Detect Current GPS'}
               </button>
             </div>
 
@@ -475,14 +475,14 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 onChange={(e) => setCategory(e.target.value as PostCategory)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-white/15 text-xs font-semibold"
               >
-                <option value="breaking">🔴 Breaking News</option>
-                <option value="local">📍 Local / Regional</option>
-                <option value="politics">🏛️ Politics & Policy</option>
-                <option value="tech">⚡ Tech & AI</option>
-                <option value="science">🔬 Science & Space</option>
-                <option value="business">📈 Markets & Business</option>
-                <option value="weather_disaster">🌪️ Weather & Disaster</option>
-                <option value="culture">🎭 World Culture</option>
+                <option value="breaking">Breaking News</option>
+                <option value="local">Local / Regional</option>
+                <option value="politics">Politics & Policy</option>
+                <option value="tech">Tech & AI</option>
+                <option value="science">Science & Space</option>
+                <option value="business">Markets & Business</option>
+                <option value="weather_disaster">Weather & Disaster</option>
+                <option value="culture">World Culture</option>
               </select>
             </div>
 
@@ -537,7 +537,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
               className="px-5 py-2.5 rounded-xl text-xs font-extrabold text-slate-950 shadow-lg transition-transform active:scale-95"
               style={{ backgroundColor: primaryColor }}
             >
-              🚀 Publish Live Report
+              Publish Live Report
             </button>
           </div>
         </div>

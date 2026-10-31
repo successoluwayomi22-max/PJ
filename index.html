@@ -3,13 +3,83 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PULSE — Global Citizen Journalism & Spatial News Network</title>
+    
+    <!-- Primary Metadata -->
+    <title>PULSE — Real-Time Spatial News &amp; Citizen Journalism Network</title>
+    <meta
+      name="description"
+      content="Verified eyewitness journalism, 4K video reporting, interactive 3D spatial telemetry, and peer-reviewed Community Notes from correspondents worldwide."
+    />
+    <meta name="author" content="Pulse News Global Editorial Team" />
+    <link rel="canonical" href="https://pulsenews.global/" />
+    <link rel="alternate" type="application/rss+xml" title="Pulse News Live Feed" href="/rss.xml" />
+
+    <!-- HTTP Security & Privacy Meta Directives -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta
+      http-equiv="Permissions-Policy"
+      content="camera=(self), microphone=(), geolocation=(self), payment=()"
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; media-src 'self' https: blob:; connect-src 'self' https:; frame-ancestors 'none';"
+    />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://pulsenews.global/" />
+    <meta property="og:site_name" content="Pulse News Network" />
+    <meta property="og:title" content="PULSE — Real-Time Spatial News &amp; Citizen Journalism Network" />
+    <meta
+      property="og:description"
+      content="Verified eyewitness journalism, 4K video reporting, and peer-reviewed Community Notes from correspondents worldwide."
+    />
+    <meta
+      property="og:image"
+      content="https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&amp;auto=format&amp;fit=crop&amp;q=85"
+    />
+
+    <!-- Twitter / X Cards -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@pulsenews" />
+    <meta name="twitter:title" content="PULSE — Real-Time Spatial News &amp; Citizen Journalism Network" />
+    <meta
+      name="twitter:description"
+      content="Verified eyewitness journalism, 4K video reporting, and peer-reviewed Community Notes from correspondents worldwide."
+    />
+    <meta
+      name="twitter:image"
+      content="https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&amp;auto=format&amp;fit=crop&amp;q=85"
+    />
+
+    <!-- Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap"
       rel="stylesheet"
     />
+
+    <!-- Google Search Central Structured Data (NewsMediaOrganization) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "NewsMediaOrganization",
+        "name": "Pulse News",
+        "url": "https://pulsenews.global",
+        "logo": "https://pulsenews.global/logo.png",
+        "sameAs": [
+          "https://twitter.com/pulsenews",
+          "https://github.com/pulsenews"
+        ],
+        "publishingPrinciples": "https://pulsenews.global/privacy",
+        "masthead": "https://pulsenews.global/profile/commander_chief",
+        "actionableFeedbackPolicy": "https://pulsenews.global/privacy#feedback",
+        "correctionsPolicy": "https://pulsenews.global/privacy#corrections",
+        "diversityPolicy": "https://pulsenews.global/privacy#diversity"
+      }
+    </script>
   </head>
   <body class="antialiased selection:bg-sky-500/25 selection:text-sky-200">
     <div id="root"></div>

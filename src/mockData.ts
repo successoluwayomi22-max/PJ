@@ -86,7 +86,7 @@ export const DESIGNER_COLOR_PRESETS: DesignerColorPreset[] = [
 
 export const INITIAL_SITE_SETTINGS: SiteSettings = {
   siteName: 'PULSE NEWS',
-  siteTagline: 'The Global Citizen Journalism & 3D Social News Network',
+  siteTagline: 'Global Journalism & Real-Time News Network',
   logoEmblem: 'globe',
   breakingBannerText:
     'LIVE COVERAGE: Global Clean-Energy Grid Milestone Reached in Tokyo • 48 Verified Eyewitness Streams Active Worldwide',
@@ -604,6 +604,7 @@ export const INITIAL_COMMUNITY_NOTES: CommunityNote[] = [
 ];
 
 export const INITIAL_COMMENTS: CommentItem[] = [
+  // Post 1: Tokyo Maglev
   {
     id: 'c-1',
     postId: 'post-1',
@@ -625,14 +626,149 @@ export const INITIAL_COMMENTS: CommentItem[] = [
     createdAt: hoursAgo(0.8),
   },
   {
+    id: 'c-1b',
+    postId: 'post-1',
+    authorId: 'user-marcus',
+    parentCommentId: null,
+    content:
+      'Having a 6-minute connection between Haneda Airport and Shibuya will completely transform international commuter logistics in Tokyo.',
+    upvotes: 39,
+    createdAt: hoursAgo(0.6),
+  },
+  {
+    id: 'c-1c',
+    postId: 'post-1',
+    authorId: 'user-claire',
+    parentCommentId: 'c-1b',
+    content:
+      'Agreed—we are studying this exact superconducting corridor model for the Grand Paris Express airport link.',
+    upvotes: 27,
+    createdAt: hoursAgo(0.4),
+  },
+  // Post 2: Rotterdam Surge Barriers
+  {
     id: 'c-3',
     postId: 'post-2',
     authorId: 'user-claire',
     parentCommentId: null,
     content:
       'Dutch engineering never ceases to amaze. Stay safe out there on the observation pier, Dr. Thorne!',
-    upvotes: 41,
+    upvotes: 64,
     createdAt: hoursAgo(2.1),
+  },
+  {
+    id: 'c-3b',
+    postId: 'post-2',
+    authorId: 'user-marcus',
+    parentCommentId: 'c-3',
+    content:
+      'Thank you Claire! The inner canal water level is completely calm behind the Maeslantkering sector arms.',
+    upvotes: 41,
+    createdAt: hoursAgo(1.9),
+  },
+  {
+    id: 'c-3c',
+    postId: 'post-2',
+    authorId: 'user-admin',
+    parentCommentId: null,
+    content:
+      'We have cross-referenced the RWS offshore buoy telemetry—peak gust hit 118.4 km/h at 06:12 UTC.',
+    upvotes: 29,
+    createdAt: hoursAgo(1.5),
+  },
+  // Post 3: Lagos Solar Micro-Grid
+  {
+    id: 'c-4',
+    postId: 'post-3',
+    authorId: 'user-kenji',
+    parentCommentId: null,
+    content:
+      'Sodium-ion battery storage paired with rooftop solar is a total game-changer for dense urban tech corridors. Zero cobalt needed and zero fire risk.',
+    upvotes: 93,
+    createdAt: hoursAgo(2.8),
+  },
+  {
+    id: 'c-4b',
+    postId: 'post-3',
+    authorId: 'user-amina',
+    parentCommentId: 'c-4',
+    content:
+      'Exactly! Plus the ambient noise level in Yaba has dropped dramatically now that hundreds of diesel generators are switched off.',
+    upvotes: 68,
+    createdAt: hoursAgo(2.4),
+  },
+  {
+    id: 'c-4c',
+    postId: 'post-3',
+    authorId: 'user-admin',
+    parentCommentId: null,
+    content:
+      'Hospital administrators in Surulere and Yaba confirmed 100% uninterrupted power across intensive care units for 72 straight hours.',
+    upvotes: 54,
+    createdAt: hoursAgo(1.8),
+  },
+  // Post 4: Paris Seine Hydrofoil Ferry
+  {
+    id: 'c-5',
+    postId: 'post-4',
+    authorId: 'user-marcus',
+    parentCommentId: null,
+    content:
+      'Using computer-controlled hydrofoils to eliminate wake erosion on historic stone riverbanks is brilliant urban design.',
+    upvotes: 47,
+    createdAt: hoursAgo(4.0),
+  },
+  {
+    id: 'c-5b',
+    postId: 'post-4',
+    authorId: 'user-claire',
+    parentCommentId: 'c-5',
+    content:
+      'And because it accepts the standard Navigo monthly pass, morning commuters are already packing every departure!',
+    upvotes: 33,
+    createdAt: hoursAgo(3.5),
+  },
+  // Post 5: Disputed NYC Blackout Claim
+  {
+    id: 'c-6',
+    postId: 'post-5',
+    authorId: 'user-admin',
+    parentCommentId: null,
+    content:
+      'Fact-Check Notice: I am looking out at Midtown and Lower Manhattan right now—lights are 100% on and Con Edison reports normal grid load.',
+    upvotes: 142,
+    createdAt: hoursAgo(1.8),
+  },
+  {
+    id: 'c-6b',
+    postId: 'post-5',
+    authorId: 'user-kenji',
+    parentCommentId: 'c-6',
+    content:
+      'Reverse-image hash confirms this photo is from the July 13, 2019 West Side transformer outage.',
+    upvotes: 88,
+    createdAt: hoursAgo(1.6),
+  },
+  // Post 6: UN Open-Verify Charter
+  {
+    id: 'c-7',
+    postId: 'post-6',
+    authorId: 'user-amina',
+    parentCommentId: null,
+    content:
+      'As a field photojournalist, hardware-signed C2PA provenance protects our real on-the-ground reporting from being dismissed as AI-generated.',
+    upvotes: 115,
+    createdAt: hoursAgo(4.8),
+  },
+  {
+    id: 'c-7b',
+    postId: 'post-6',
+    authorId: 'user-claire',
+    parentCommentId: 'c-7',
+    content:
+      '100% agreed. Open-source verification is the strongest defense for independent journalism.',
+    upvotes: 61,
+    createdAt: hoursAgo(4.1),
   },
 ];
 

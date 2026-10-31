@@ -4,11 +4,11 @@ import {
   Compass,
   Eye,
   Film,
+  Layers,
   MapPin,
   Play,
   Radio,
   ShieldCheck,
-  Sparkles,
   X,
 } from 'lucide-react';
 import { MediaItem, NewsPost, User } from '../types';
@@ -69,7 +69,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2 bg-sky-500/15 text-sky-400">
-              <Sparkles className="w-3.5 h-3.5" /> 3D Eyewitness Visual Hub & Press Gallery
+              <Layers className="w-3.5 h-3.5" /> Eyewitness Visual Hub & Press Gallery
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               Global Eyewitness Media Stream
@@ -82,7 +82,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
           {/* Filter Switcher Pills */}
           <div className="flex flex-wrap items-center gap-2">
             {[
-              { id: 'all', label: `All Media (${allItems.length})`, icon: Sparkles },
+              { id: 'all', label: `All Media (${allItems.length})`, icon: Layers },
               { id: 'video', label: '4K Videos', icon: Film },
               { id: 'image', label: 'Photojournalism', icon: Camera },
               { id: 'panorama_360', label: '360° Spatial 3D', icon: Compass },

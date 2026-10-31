@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+  <title>Pulse News — Real-Time Spatial News &amp; Citizen Journalism</title>
+  <link>https://pulsenews.global</link>
+  <description>C2PA-verified global news dispatches, 4K video journalism, and peer-reviewed eyewitness reporting.</description>
+  <language>en-us</language>
+  <lastBuildDate>Sat, 31 Oct 2026 08:00:00 GMT</lastBuildDate>
+  <atom:link href="https://pulsenews.global/rss.xml" rel="self" type="application/rss+xml" />
+
+  <item>
+    <title>Tokyo Unveils Autonomous Maglev Express Pod Linking Haneda to Shibuya in 6 Minutes</title>
+    <link>https://pulsenews.global/article/post-1</link>
+    <description>Reporting live from Shinagawa Terminal where JR East and Tokyo Metro engineers just completed the first public commuter run of the superconducting L0-Urban Maglev pod.</description>
+    <category>Tech &amp; AI</category>
+    <pubDate>Sat, 31 Oct 2026 07:15:00 GMT</pubDate>
+    <guid>https://pulsenews.global/article/post-1</guid>
+  </item>
+
+  <item>
+    <title>Emergency Coastal Surge Barriers Deployed in Rotterdam Ahead of North Sea Gale</title>
+    <link>https://pulsenews.global/article/post-2</link>
+    <description>Standing at the Maeslantkering sector where automated storm-surge arms have swung shut for the first time this season with wind gusts registering 118 km/h.</description>
+    <category>Weather &amp; Disaster</category>
+    <pubDate>Sat, 31 Oct 2026 06:45:00 GMT</pubDate>
+    <guid>https://pulsenews.global/article/post-2</guid>
+  </item>
+
+  <item>
+    <title>Lagos Solar Micro-Grid Powers 40,000 Homes and Tech Hubs Through 100% Battery Inverters</title>
+    <link>https://pulsenews.global/article/post-3</link>
+    <description>From the rooftop command center overlooking Yaba where engineers switched 42 community commercial transformers completely over to local lithium-iron phosphate arrays.</description>
+    <category>Science &amp; Space</category>
+    <pubDate>Sat, 31 Oct 2026 05:30:00 GMT</pubDate>
+    <guid>https://pulsenews.global/article/post-3</guid>
+  </item>
+</channel>
+</rss>
+

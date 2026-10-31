@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Bookmark, Compass, Search, Trash2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Bookmark, Compass, Search, Trash2 } from 'lucide-react';
 import { CommentItem, CommunityNote, LanguageCode, NewsPost, User } from '../types';
 import { NewsPostCard } from '../components/NewsPostCard';
 
@@ -11,7 +11,9 @@ interface BookmarksPageProps {
   notes: CommunityNote[];
   bookmarkedIds: string[];
   likedIds: string[];
+  dislikedIds: string[];
   repostedIds: string[];
+  likedCommentIds: string[];
   currentUser: User;
   lang: LanguageCode;
   primaryColor: string;
@@ -20,12 +22,18 @@ interface BookmarksPageProps {
   onToggleBookmark: (postId: string) => void;
   onClearAllBookmarks: () => void;
   onLike: (postId: string) => void;
+  onDislike: (postId: string) => void;
   onRepost: (postId: string) => void;
-  onAddComment: (postId: string, content: string) => void;
+  onQuoteRepost?: (originalPost: NewsPost, quoteText: string) => void;
+  onAddComment: (postId: string, content: string, parentCommentId?: string | null) => void;
+  onLikeComment: (commentId: string) => void;
+  onDeleteComment: (commentId: string, postId: string) => void;
   onUpdatePost: (postId: string, updates: Partial<NewsPost>, reason: string) => void;
   onDeletePost: (postId: string) => void;
   onPlayAudio: (post: NewsPost) => void;
   onOpenLightbox: (url: string, caption?: string) => void;
+  followedUserIds?: string[];
+  onToggleFollow?: (userId: string) => void;
 }
 
 export const BookmarksPage: React.FC<BookmarksPageProps> = ({
@@ -35,7 +43,9 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
   notes,
   bookmarkedIds,
   likedIds,
+  dislikedIds,
   repostedIds,
+  likedCommentIds,
   currentUser,
   lang,
   primaryColor,
@@ -44,13 +54,20 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
   onToggleBookmark,
   onClearAllBookmarks,
   onLike,
+  onDislike,
   onRepost,
+  onQuoteRepost,
   onAddComment,
+  onLikeComment,
+  onDeleteComment,
   onUpdatePost,
   onDeletePost,
   onPlayAudio,
   onOpenLightbox,
+  followedUserIds = [],
+  onToggleFollow,
 }) => {
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
 
   const savedPosts = posts.filter((post) => {
@@ -65,7 +82,18 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
   });
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 pb-24 space-y-6">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 pb-24 space-y-6">
+      <div className="flex items-center justify-between pb-1 border-b border-slate-500/15">
+        <button
+          type="button"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border border-slate-500/25 hover:bg-slate-500/10 transition-colors"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back</span>
+        </button>
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-editorial text-2xl sm:text-3xl font-bold tracking-tight">
@@ -120,15 +148,23 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
                 cardBgColor={cardBgColor}
                 bookmarked={bookmarkedIds.includes(post.id)}
                 isLiked={likedIds.includes(post.id)}
+                isDisliked={dislikedIds.includes(post.id)}
                 isReposted={repostedIds.includes(post.id)}
+                likedCommentIds={likedCommentIds}
                 onLike={onLike}
+                onDislike={onDislike}
                 onRepost={onRepost}
+                onQuoteRepost={onQuoteRepost}
                 onToggleBookmark={onToggleBookmark}
                 onAddComment={onAddComment}
+                onLikeComment={onLikeComment}
+                onDeleteComment={onDeleteComment}
                 onUpdatePost={onUpdatePost}
                 onDeletePost={onDeletePost}
                 onPlayAudio={onPlayAudio}
                 onOpenLightbox={onOpenLightbox}
+                followedUserIds={followedUserIds}
+                onToggleFollow={onToggleFollow}
               />
             );
           })}
@@ -141,7 +177,7 @@ export const BookmarksPage: React.FC<BookmarksPageProps> = ({
           <Bookmark className="w-8 h-8 mx-auto opacity-30" />
           <div className="font-semibold text-base">Save stories for later</div>
           <p className="text-xs opacity-60 max-w-sm mx-auto leading-relaxed">
-            Bookmark breaking reports, longform investigations, or videos on your feed to build your personal reading list.
+            Click Save on any breaking report, investigation, or video on your feed to build your personal reading list.
           </p>
           <div className="pt-2">
             <Link

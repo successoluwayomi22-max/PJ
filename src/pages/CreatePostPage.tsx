@@ -11,7 +11,6 @@ import {
   Navigation,
   Radio,
   ShieldCheck,
-  Sparkles,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -213,13 +212,6 @@ export const CreatePostPage: React.FC<CreatePostPageProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={handleAiSynthesize}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-medium border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5" /> Synthesize Executive Brief
-          </button>
           <button
             type="button"
             onClick={() => handlePublish(true)}

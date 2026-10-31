@@ -42,6 +42,7 @@ export interface User {
   joinedAt: string;
   followersCount: number;
   reportsCount: number;
+  password?: string;
 }
 
 export interface MediaItem {
@@ -141,6 +142,7 @@ export interface SiteSettings {
   siteName: string;
   siteTagline: string;
   logoEmblem: 'globe' | 'atom' | 'pulse' | 'shield';
+  logoUrl?: string;
   breakingBannerText: string;
   theme: ThemeConfig;
   algorithm: AlgorithmWeights;

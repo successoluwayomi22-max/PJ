@@ -38,6 +38,14 @@ const serverLogs: TelemetryLog[] = [
 let cacheHitRatio = 97.4;
 
 export default defineConfig({
+  server: {
+    headers: {
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'camera=(self), microphone=(), geolocation=(self)',
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -95,7 +103,15 @@ export default defineConfig({
             req.on('end', () => {
               try {
                 const payload = JSON.parse(body || '{}');
-                if (payload.action === 'purge_cache') {
+                if (payload.action === 'clear_logs') {
+                  serverLogs.splice(0, serverLogs.length, {
+                    id: `log-${Date.now()}`,
+                    timestamp: new Date().toISOString(),
+                    level: 'INFO',
+                    message: 'Telemetry log buffer cleared by administrator (debounced logging active)',
+                    latencyMs: 2,
+                  });
+                } else if (payload.action === 'purge_cache') {
                   cacheHitRatio = 99.2;
                   serverLogs.unshift({
                     id: `log-${Date.now()}`,
@@ -114,13 +130,29 @@ export default defineConfig({
                     latencyMs: 11,
                   });
                 } else if (payload.message) {
-                  serverLogs.unshift({
-                    id: `log-${Date.now()}`,
-                    timestamp: new Date().toISOString(),
-                    level: payload.level || 'INFO',
-                    message: payload.message,
-                    latencyMs: payload.latencyMs || 5,
-                  });
+                  const msg = String(payload.message);
+                  const prefix = msg.split('"')[0]?.trim();
+                  if (
+                    prefix &&
+                    serverLogs[0] &&
+                    serverLogs[0].message.startsWith(prefix)
+                  ) {
+                    serverLogs[0] = {
+                      id: `log-${Date.now()}`,
+                      timestamp: new Date().toISOString(),
+                      level: payload.level || 'INFO',
+                      message: msg,
+                      latencyMs: payload.latencyMs || 4,
+                    };
+                  } else {
+                    serverLogs.unshift({
+                      id: `log-${Date.now()}`,
+                      timestamp: new Date().toISOString(),
+                      level: payload.level || 'INFO',
+                      message: msg,
+                      latencyMs: payload.latencyMs || 5,
+                    });
+                  }
                 }
               } catch {
                 // ignore parse error
